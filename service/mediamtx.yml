@@ -1,0 +1,23 @@
+# MediaMTX sozlamasi — serverda turadi.
+# Kameralar RTSP beradi, MediaMTX HLS/WebRTC'ga aylantiradi.
+
+api: yes
+apiAddress: :9997          # service shu API'ga "kamera qo'sh/o'chir" deydi
+
+hlsAddress: :8888          # HLS chiqishi (eng universal)
+webrtcAddress: :8889       # WebRTC (past kechikish, ixtiyoriy)
+rtspAddress: :8554
+
+# Ko'rishni service orqali tekshiramiz: har bir ulanishda MediaMTX
+# bizning /api/stream-auth endpoint'imizdan "ha/yo'q" so'raydi.
+authMethod: http
+authHTTPAddress: http://127.0.0.1:4000/api/stream-auth
+authHTTPExclude:
+  - action: api            # API'ni localhost ichida ochiq qoldiramiz
+  - action: metrics
+  - action: pprof
+
+# On-demand (faqat ko'rganda ishlash) endi har bir yo'lda alohida "runOnDemand"
+# orqali sozlanadi (service ffmpeg buyrug'ini yuboradi). Shu sabab bu yerda
+# pathDefaults ichida sourceOnDemand BERMAYMIZ — aks holda MediaMTX:
+# "'sourceOnDemand' is useless when source is 'publisher'" deb yo'lni rad etadi.

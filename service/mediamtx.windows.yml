@@ -1,0 +1,24 @@
+# MediaMTX sozlamasi — Windows/Mac Docker Desktop uchun (bridge tarmoq).
+# Linux serverda mediamtx.yml dan foydalaning (u 127.0.0.1 ishlatadi).
+# Bu yerda konteynerlar bir-birini NOM orqali topadi: "service", "mediamtx".
+
+api: yes
+apiAddress: :9997          # service shu API'ga "kamera qo'sh/o'chir" deydi
+
+hlsAddress: :8888          # HLS chiqishi (eng universal)
+webrtcAddress: :8889       # WebRTC (past kechikish, ixtiyoriy)
+rtspAddress: :8554
+
+# Ko'rishni service orqali tekshiramiz. Bridge tarmoqda MediaMTX service'ni
+# konteyner nomi orqali topadi (127.0.0.1 emas).
+authMethod: http
+authHTTPAddress: http://service:4000/api/stream-auth
+authHTTPExclude:
+  - action: api            # API'ni ichki tarmoqda ochiq qoldiramiz
+  - action: metrics
+  - action: pprof
+
+# On-demand (faqat ko'rganda ishlash) endi har bir yo'lda alohida "runOnDemand"
+# orqali sozlanadi (service ffmpeg buyrug'ini yuboradi). Shu sabab bu yerda
+# pathDefaults ichida sourceOnDemand BERMAYMIZ — aks holda MediaMTX:
+# "'sourceOnDemand' is useless when source is 'publisher'" deb yo'lni rad etadi.
