@@ -1,0 +1,1 @@
+function c(){return{list:()=>$fetch("/api/cameras"),add:e=>$fetch("/api/cameras",{method:"POST",body:e}),remove:e=>$fetch(`/api/cameras/${e}`,{method:"DELETE"}),refreshUrls:e=>$fetch(`/api/cameras/${e}/token`)}}export{c as u};
