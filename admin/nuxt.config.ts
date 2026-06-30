@@ -6,9 +6,9 @@ export default defineNuxtConfig({
   // `nuxi generate` HTML/JS/CSS chiqaradi, server route'lar bo'lmaydi.
   ssr: false,
 
-  // Sayt domen ostida /admin/ yo'lida turadi. Asset'lar va router shunga moslanadi.
+  // Domen ildizidan beriladi (Hestia doc root -> .output/public).
   app: {
-    baseURL: "/admin/",
+    baseURL: "/",
   },
 
   // To'g'ridan-to'g'ri yo'naltirilgan sahifalar uchun HTML shellar yaratamiz,
