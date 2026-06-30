@@ -4,6 +4,8 @@ const error = ref("");
 const loading = ref(false);
 const router = useRouter();
 const route = useRoute();
+const { call } = useApi();
+const { set } = useAuth();
 
 async function submit() {
   error.value = "";
@@ -13,15 +15,17 @@ async function submit() {
   }
   loading.value = true;
   try {
-    await $fetch("/api/login", {
+    // Parolni to'g'ridan service'ga yuboramiz, token olamiz va saqlaymiz.
+    const { token } = await call<{ token: string }>("/api/login", {
       method: "POST",
       body: { password: password.value },
     });
+    set(token);
     // Kirilgandan keyin asosiy sahifaga (yoki kelingan sahifaga) o'tamiz.
     const back = (route.query.redirect as string) || "/";
     await router.push(back);
   } catch (e: any) {
-    error.value = e?.data?.statusMessage || e?.statusMessage || "Noto'g'ri parol.";
+    error.value = e?.data?.error || "Noto'g'ri parol.";
   } finally {
     loading.value = false;
   }

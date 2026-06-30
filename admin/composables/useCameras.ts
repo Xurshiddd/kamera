@@ -1,16 +1,17 @@
-// Brauzer faqat Nuxt'ning o'z /api route'lariga murojaat qiladi.
-// Ular orqasida (serverda) service'ga API kalit bilan boriladi.
+// Static SPA to'g'ridan service'ga (boshqa serverdagi IP/domen) ulanadi.
+// Avtorizatsiya — admin Bearer tokeni (useApi qo'shadi).
 export function useCameras() {
-  const list = (): Promise<Camera[]> => $fetch("/api/cameras");
+  const { call } = useApi();
+
+  const list = (): Promise<Camera[]> => call("/api/cameras");
 
   const add = (payload: NewCamera): Promise<Camera> =>
-    $fetch("/api/cameras", { method: "POST", body: payload });
+    call("/api/cameras", { method: "POST", body: payload });
 
-  const remove = (id: number) =>
-    $fetch(`/api/cameras/${id}`, { method: "DELETE" });
+  const remove = (id: number) => call(`/api/cameras/${id}`, { method: "DELETE" });
 
   const refreshUrls = (slug: string): Promise<Camera> =>
-    $fetch(`/api/cameras/${slug}/token`);
+    call(`/api/cameras/${slug}/token`);
 
   return { list, add, remove, refreshUrls };
 }

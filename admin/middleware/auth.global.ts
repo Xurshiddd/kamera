@@ -1,15 +1,11 @@
-// Har bir sahifaga o'tishdan oldin ishlaydi.
-// Kirilmagan bo'lsa /login ga yo'naltiradi.
-export default defineNuxtRouteMiddleware(async (to) => {
+// Har bir sahifaga o'tishdan oldin ishlaydi (faqat klientda — SSR yo'q).
+// Token bo'lmasa /login ga yo'naltiradi. Token haqiqiyligini service'ning
+// o'zi (har API so'rovda) tekshiradi; bu yerda faqat tezkor tekshiruv.
+export default defineNuxtRouteMiddleware((to) => {
   if (to.path === "/login") return;
 
-  try {
-    const { authed } = await $fetch<{ authed: boolean }>("/api/session", {
-      // SSR paytida brauzer cookie'sini server route'ga uzatamiz.
-      headers: import.meta.server ? useRequestHeaders(["cookie"]) : undefined,
-    });
-    if (!authed) return navigateTo("/login");
-  } catch {
-    return navigateTo("/login");
+  const { token } = useAuth();
+  if (!token.value) {
+    return navigateTo({ path: "/login", query: { redirect: to.fullPath } });
   }
 });

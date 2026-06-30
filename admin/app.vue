@@ -2,12 +2,13 @@
 const cfg = useRuntimeConfig();
 const route = useRoute();
 const router = useRouter();
+const { clear } = useAuth();
 
 // Login sahifasida navigatsiya/chiqish tugmasi ko'rinmasin.
 const onLogin = computed(() => route.path === "/login");
 
 async function logout() {
-  await $fetch("/api/logout", { method: "POST" });
+  clear();
   await router.push("/login");
 }
 </script>

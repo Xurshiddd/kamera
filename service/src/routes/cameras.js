@@ -1,7 +1,7 @@
 import { Router } from "express";
 import db from "../db.js";
 import { addPath, deletePath } from "../mediamtx.js";
-import { requireApiKey, issueStreamToken } from "../auth.js";
+import { requireAuth, issueStreamToken } from "../auth.js";
 
 const router = Router();
 const BASE = process.env.STREAM_BASE || "http://localhost:8888";
@@ -27,7 +27,7 @@ function publicUrls(slug) {
 }
 
 // Hamma kamerani ko'rsatish (parolsiz).
-router.get("/", requireApiKey, (req, res) => {
+router.get("/", requireAuth, (req, res) => {
   const rows = db
     .prepare("SELECT id, name, slug, ip, port, created_at FROM cameras ORDER BY id DESC")
     .all();
@@ -35,7 +35,7 @@ router.get("/", requireApiKey, (req, res) => {
 });
 
 // Yangi kamera qo'shish.
-router.post("/", requireApiKey, async (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   const { name, ip, port = 554, login, parol, rtspPath } = req.body || {};
   if (!name || !ip || !login || !parol) {
     return res.status(400).json({ error: "name, ip, login, parol majburiy" });
@@ -74,14 +74,14 @@ router.post("/", requireApiKey, async (req, res) => {
 });
 
 // Bitta kamera uchun yangi (yangilangan) tomosha tokeni — eski muddati tugaganda.
-router.get("/:slug/token", requireApiKey, (req, res) => {
+router.get("/:slug/token", requireAuth, (req, res) => {
   const row = db.prepare("SELECT slug FROM cameras WHERE slug = ?").get(req.params.slug);
   if (!row) return res.status(404).json({ error: "Topilmadi" });
   res.json(publicUrls(row.slug));
 });
 
 // Kamerani o'chirish.
-router.delete("/:id", requireApiKey, async (req, res) => {
+router.delete("/:id", requireAuth, async (req, res) => {
   const row = db.prepare("SELECT slug FROM cameras WHERE id = ?").get(req.params.id);
   if (!row) return res.status(404).json({ error: "Topilmadi" });
 
