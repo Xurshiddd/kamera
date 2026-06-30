@@ -3,10 +3,10 @@ const styles = {
   "node_modules/nuxt/dist/app/entry.js": () => import('./entry-styles.YXrAwdol.mjs').then(interopDefault),
   "app.vue": () => import('./entry-styles.YXrAwdol.mjs').then(interopDefault),
   "pages/index.vue": () => import('./index-styles.DIBROP9w.mjs').then(interopDefault),
-  "pages/add.vue": () => import('./add-styles.WkEaAmTY.mjs').then(interopDefault),
   "pages/login.vue": () => import('./login-styles.B0mcgJDu.mjs').then(interopDefault),
-  "node_modules/nuxt/dist/app/components/error-500.vue": () => import('./error-500-styles.ulHNpcF1.mjs').then(interopDefault),
-  "node_modules/nuxt/dist/app/components/error-404.vue": () => import('./error-404-styles.CiJjK6WX.mjs').then(interopDefault)
+  "pages/add.vue": () => import('./add-styles.WkEaAmTY.mjs').then(interopDefault),
+  "node_modules/nuxt/dist/app/components/error-404.vue": () => import('./error-404-styles.CiJjK6WX.mjs').then(interopDefault),
+  "node_modules/nuxt/dist/app/components/error-500.vue": () => import('./error-500-styles.ulHNpcF1.mjs').then(interopDefault)
 };
 
 export { styles as default };
