@@ -12,7 +12,6 @@
 
 services:
   mediamtx:
-    # -ffmpeg variant: ichida ffmpeg bor (H265 -> H264 transcoding uchun shart)
     image: bluenviron/mediamtx:latest-ffmpeg
     volumes:
       - ./mediamtx.windows.yml:/mediamtx.yml
@@ -24,7 +23,7 @@ services:
 
   service:
     build: .
-    env_file: .env
+    env_file: .env.local # LOCAL sozlamalar (prod uchun docker-compose.yml -> .env)
     environment:
       # Bridge tarmoqda MediaMTX'ni konteyner nomi orqali topamiz (.env'dagi
       # 127.0.0.1 qiymatini ustidan yozadi).

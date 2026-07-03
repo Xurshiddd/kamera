@@ -6,6 +6,12 @@ export default defineNuxtConfig({
   // `nuxi generate` HTML/JS/CSS chiqaradi, server route'lar bo'lmaydi.
   ssr: false,
 
+  // Nuxt 3.21.x da SPA (ssr:false) dev serverida "No entry found in
+  // rollupOptions.input" bug'ini chetlab o'tish uchun Vite Environment API.
+  experimental: {
+    viteEnvironmentApi: true,
+  },
+
   // Domen ildizidan beriladi (Hestia doc root -> .output/public).
   app: {
     baseURL: "/",

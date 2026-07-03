@@ -4,13 +4,16 @@ const { list, remove } = useCameras();
 const cameras = ref<Camera[]>([]);
 const loading = ref(true);
 const error = ref("");
-const preview = ref<string | null>(null); // qaysi slug ko'rsatilmoqda
 
 async function reload() {
   loading.value = true;
   error.value = "";
   try {
-    cameras.value = await list();
+    const data = await list();
+    // Himoya: service o'rniga (proxy/backend noto'g'ri bo'lsa) HTML yoki xato
+    // qaytsa, uni harflab "kamera" qilib chizmaymiz — bo'sh ro'yxat ko'rsatamiz.
+    if (!Array.isArray(data)) throw new Error("Kutilmagan javob (massiv emas)");
+    cameras.value = data;
   } catch (e: any) {
     error.value = "Service'ga ulanib bo'lmadi. Server manzili/kalitni tekshiring.";
   } finally {
@@ -55,10 +58,8 @@ onMounted(reload);
         </div>
 
         <ClientOnly>
-          <HlsPlayer v-if="preview === c.slug" :src="c.hls" />
-          <button v-else class="preview-stub" @click="preview = c.slug">
-            ▶ Jonli ko'rish
-          </button>
+          <!-- Login'dan keyin hamma kamera avtomatik jonli ochiladi (tugma yo'q) -->
+          <HlsPlayer :src="c.hls" />
         </ClientOnly>
 
         <div class="urls">
@@ -119,16 +120,6 @@ h1 {
 .slug {
   font-size: 12px;
   color: var(--muted);
-}
-.preview-stub {
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: #000;
-  border: 1px dashed var(--line);
-  border-radius: 10px;
-  color: var(--accent);
-  cursor: pointer;
-  font-size: 15px;
 }
 .urls {
   margin-top: 12px;

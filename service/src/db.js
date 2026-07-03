@@ -12,7 +12,11 @@ const DATA_DIR = process.env.DATA_DIR || "data";
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new Database(path.join(DATA_DIR, "kamera.db"));
-db.pragma("journal_mode = WAL");
+// WAL rejimi Docker Desktop (Windows) bind-mount'da ishonchsiz: yozuvlar -wal
+// fayliga tushib, asosiy faylga to'g'ri checkpoint bo'lmaydi va konteyner
+// restartida yo'qoladi (o'chirilgan kamera "qaytib keladi"). Kam yozuvli bu
+// loyiha uchun oddiy DELETE jurnali ishonchliroq.
+db.pragma("journal_mode = DELETE");
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS cameras (

@@ -20,9 +20,26 @@ function load() {
     return;
   }
   if (Hls.isSupported()) {
-    hls = new Hls({ lowLatencyMode: true });
+    // MediaMTX'ning LL-HLS chiqishi hls.js'ning low-latency rejimida ishonchsiz:
+    // efir ochilmay osilib qoladi. Kamera kuzatuvida past kechikish shart emas,
+    // shuning uchun oddiy (barqaror) HLS rejimini ishlatamiz.
+    hls = new Hls({ lowLatencyMode: false });
     hls.loadSource(props.src);
     hls.attachMedia(el);
+
+    // Sovuq start (MediaMTX ffmpeg'ni ishga tushirayotgan ~15s) yoki vaqtinchalik
+    // uzilishda hls.js fatal xato berib to'xtab qolmasin — qaytadan urinamiz.
+    hls.on(Hls.Events.ERROR, (_evt, data) => {
+      if (!data.fatal || !hls) return;
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        hls.startLoad(); // playlist/segment qayta yuklashga urinamiz
+      } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        hls.recoverMediaError();
+      } else {
+        hls.destroy();
+        hls = null;
+      }
+    });
   }
 }
 
