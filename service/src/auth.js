@@ -2,7 +2,6 @@ import jwt from "jsonwebtoken";
 
 const API_KEY = process.env.SERVICE_API_KEY;
 const JWT_SECRET = process.env.JWT_SECRET;
-const TTL = Number(process.env.TOKEN_TTL_SECONDS || 60);
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 // Admin (brauzer) session tokeni qancha amal qiladi (soniya). Default 12 soat.
 const ADMIN_TTL = Number(process.env.ADMIN_TOKEN_TTL_SECONDS || 12 * 60 * 60);
@@ -48,19 +47,4 @@ export function requireAuth(req, res, next) {
   if (m && verifyAdminToken(m[1])) return next();
 
   return res.status(401).json({ error: "Avtorizatsiya kerak" });
-}
-
-// Ma'lum bir kamera (slug) uchun qisqa muddatli tomosha tokeni beramiz.
-export function issueStreamToken(slug) {
-  return jwt.sign({ slug }, JWT_SECRET, { expiresIn: TTL });
-}
-
-// MediaMTX auth-callback ichida tokenni tekshiramiz: haqiqiymi + shu kameragami.
-export function verifyStreamToken(token, slug) {
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    return payload.slug === slug;
-  } catch {
-    return false;
-  }
 }

@@ -9,14 +9,17 @@ hlsAddress: :8888          # HLS chiqishi (eng universal)
 webrtcAddress: :8889       # WebRTC (past kechikish, ixtiyoriy)
 rtspAddress: :8554
 
-# Ko'rishni service orqali tekshiramiz. Bridge tarmoqda MediaMTX service'ni
-# konteyner nomi orqali topadi (127.0.0.1 emas).
+# Oqim NASHR qilish (publish) himoyalanadi — service orqali tekshiriladi
+# (faqat ichki ffmpeg push qila oladi). KO'RISH (read/playback) esa OCHIQ:
+# token talab qilinmaydi, shu sabab HLS URL boshqa saytda login so'ramaydi.
 authMethod: http
 authHTTPAddress: http://service:4000/api/stream-auth
 authHTTPExclude:
   - action: api            # API'ni ichki tarmoqda ochiq qoldiramiz
   - action: metrics
   - action: pprof
+  - action: read           # HLS/WebRTC ko'rish — ochiq (login/parolsiz)
+  - action: playback
 
 # On-demand (faqat ko'rganda ishlash) endi har bir yo'lda alohida "runOnDemand"
 # orqali sozlanadi (service ffmpeg buyrug'ini yuboradi). Shu sabab bu yerda

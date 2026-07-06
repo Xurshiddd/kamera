@@ -12,7 +12,11 @@
 
 services:
   mediamtx:
-    image: bluenviron/mediamtx:latest-ffmpeg
+    # NVENC (GPU) transkod uchun maxsus image: mediamtx + NVIDIA ffmpeg.
+    build:
+      context: .
+      dockerfile: mediamtx-nvenc.Dockerfile
+    image: kamera-mediamtx-nvenc
     volumes:
       - ./mediamtx.windows.yml:/mediamtx.yml
     ports:
@@ -20,6 +24,14 @@ services:
       - "8889:8889" # WebRTC (ixtiyoriy)
       - "8554:8554" # RTSP
     restart: unless-stopped
+    # RTX 3070'ni konteynerga beramiz (NVENC/NVDEC/scale_npp uchun).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   service:
     build: .

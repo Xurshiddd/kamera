@@ -1,1 +1,0 @@
-import{u as a}from"./CVQSsEwm.js";function i(){const{call:s}=a();return{list:()=>s("/api/cameras"),add:e=>s("/api/cameras",{method:"POST",body:e}),remove:e=>s(`/api/cameras/${e}`,{method:"DELETE"}),refreshUrls:e=>s(`/api/cameras/${e}/token`)}}export{i as u};

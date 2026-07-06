@@ -1,7 +1,7 @@
 import { Router } from "express";
 import db from "../db.js";
 import { addPath, deletePath } from "../mediamtx.js";
-import { requireAuth, issueStreamToken } from "../auth.js";
+import { requireAuth } from "../auth.js";
 
 const router = Router();
 const BASE = process.env.STREAM_BASE || "http://localhost:8888";
@@ -16,12 +16,13 @@ function makeSlug(name) {
     .replace(/^-+|-+$/g, "");
 }
 
-// Bitta kamera uchun tashqi URL'larni yasaymiz (login/parolsiz, faqat slug).
+// Bitta kamera uchun tashqi URL'larni yasaymiz. Ko'rish ochiq (MediaMTX'da
+// read/playback auth'dan chiqarilgan), shuning uchun token KERAK EMAS —
+// URL toza bo'ladi va boshqa saytga qo'yilganda muddatsiz ishlaydi.
 function publicUrls(slug) {
-  const token = issueStreamToken(slug);
   return {
-    hls: `${BASE}/${slug}/index.m3u8?token=${token}`,
-    webrtc: `${BASE}/${slug}/whep?token=${token}`,
+    hls: `${BASE}/${slug}/index.m3u8`,
+    webrtc: `${BASE}/${slug}/whep`,
     embed: `${BASE}/${slug}`,
   };
 }

@@ -1,5 +1,4 @@
 import { Router } from "express";
-import { verifyStreamToken } from "../auth.js";
 
 const router = Router();
 
@@ -19,7 +18,7 @@ function isLoopback(ip) {
 // Diqqat: bu endpoint API kalit bilan HIMOYALANMAYDI, chunki uni MediaMTX'ning
 // o'zi (localhost'dan) chaqiradi. Himoya — token tekshiruvi.
 router.post("/stream-auth", (req, res) => {
-  const { action, path, query, ip } = req.body || {};
+  const { action, ip } = req.body || {};
 
   // Ichki transcoding (ffmpeg) H264 oqimni localhost'dan PUSH qiladi.
   // Faqat serverning o'zidan (loopback) kelgan publish'ga ruxsat beramiz.
@@ -28,16 +27,10 @@ router.post("/stream-auth", (req, res) => {
     return isLoopback(ip) ? res.sendStatus(200) : res.sendStatus(401);
   }
 
-  // Qolganlari faqat ko'rish (read/playback) bo'lishi mumkin.
-  if (action !== "read" && action !== "playback") return res.sendStatus(401);
-
-  // URL: .../{slug}/index.m3u8?token=XXX  ->  query ichida keladi.
-  const token = new URLSearchParams(query || "").get("token");
-  if (!token || !verifyStreamToken(token, path)) {
-    return res.sendStatus(401);
-  }
-
-  res.sendStatus(200); // ruxsat
+  // Ko'rish (read/playback) ochiq — MediaMTX config'ida bu action'lar auth'dan
+  // chiqarilgan, shu sabab bu yergacha odatda kelmaydi. Kelsa ham ruxsat beramiz:
+  // HLS URL login/parolsiz, istalgan saytda ishlashi kerak.
+  res.sendStatus(200);
 });
 
 export default router;
