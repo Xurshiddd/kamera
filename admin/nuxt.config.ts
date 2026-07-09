@@ -2,7 +2,7 @@ export default defineNuxtConfig({
   compatibilityDate: "2025-01-01",
   devtools: { enabled: false },
 
-  // Toza static (SPA) — serversiz hosting (Hestia public_html) uchun.
+  // Toza static (SPA) — gateway nginx statik beradi (Docker'da quriladi).
   // `nuxi generate` HTML/JS/CSS chiqaradi, server route'lar bo'lmaydi.
   ssr: false,
 
@@ -12,7 +12,7 @@ export default defineNuxtConfig({
     viteEnvironmentApi: true,
   },
 
-  // Domen ildizidan beriladi (Hestia doc root -> .output/public).
+  // Domen ildizidan beriladi (cam.ttysi.uz -> gateway -> /).
   app: {
     baseURL: "/",
   },

@@ -1,0 +1,38 @@
+# MediaMTX sozlamasi. Konteynerlar bir-birini NOM orqali topadi
+# ("service", "mediamtx"). Hech bir port tashqariga ochilmaydi.
+
+api: yes
+apiAddress: :9997 # service shu API'ga "kamera qo'sh/o'chir" deydi
+
+rtspAddress: :8554 # ffmpeg transkod natijasini shu yerga push qiladi (ichki)
+hlsAddress: :8888 # HLS muxer uchun kerak; tashqariga gateway statik beradi
+
+# Ishlatilmaydigan protokollar o'chirilgan.
+rtmp: no
+webrtc: no
+srt: no
+
+# Oqim NASHR qilish (publish) himoyalanadi — faqat konteyner ichidagi ffmpeg
+# push qila oladi. KO'RISH (read/playback) ochiq: HLS statik fayl sifatida
+# beriladi, login/parol so'ralmaydi.
+authMethod: http
+authHTTPAddress: http://service:4000/api/stream-auth
+authHTTPExclude:
+  - action: api
+  - action: metrics
+  - action: pprof
+  - action: read # HLS ko'rish — ochiq (login/parolsiz)
+  - action: playback
+
+# --- STATIK HLS: session/cookie muammosini butunlay yo'q qiladi ---
+# MediaMTX'ning HTTP HLS server'i session'ni cookie'ga soladi, cross-origin
+# pleyer esa cookie yubormaydi -> 401. Shuning uchun MediaMTX segmentlarni
+# DISKKA yozadi, gateway nginx ularni oddiy statik fayl sifatida beradi ->
+# istalgan saytda, istalgan pleyerda ishlaydi.
+hlsDirectory: /hls
+# Statik uchun mpegts variant (oddiy .ts fayllar; lowLatency 'part'lari yaramaydi).
+# 2s segment (ffmpeg GOP ham 2s) -> kamroq so'rov, barqarorroq.
+hlsVariant: mpegts
+hlsAlwaysRemux: yes
+hlsSegmentCount: 7
+hlsSegmentDuration: 2s

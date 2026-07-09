@@ -1,94 +1,76 @@
-# Kameralarni global sitega chiqarish
+# Kamera — IP kameralarni brauzerga chiqarish
 
-Loyiha **2 qism**ga bo'lingan:
+IP kameralar (RTSP) MediaMTX orqali HLS'ga aylantiriladi va brauzerda
+ko'rsatiladi. Hammasi **bitta serverda (172.16.0.23), Docker'da** ishlaydi.
+
+```
+Brauzer ── https://cam.ttysi.uz ── Hestia proxy ──> http://172.16.0.23:3000
+                                                          │
+                                                    ┌─ gateway (nginx) ─┐
+                                                    │  /      admin SPA │
+                                                    │  /api   ──> service:4000
+                                                    │  /hls   statik HLS fayllar
+                                                    └────────────────────┘
+service  — kamera CRUD (SQLite), kodek aniqlash, MediaMTX boshqaruvi
+mediamtx — RTSP tortadi, ffmpeg bilan HLS segmentlarni ./hls ga yozadi
+```
+
+**Kodek avtomatik aniqlanadi** (ffprobe):
+
+- Kamera **H264** bersa — transkod YO'Q, video to'g'ridan-to'g'ri o'tadi (CPU ~0).
+- Kamera **H265 (HEVC)** bersa — H264 ga transkod qilinadi (brauzerlar H265'ni
+  HLS orqali o'ynay olmaydi).
+
+## Deploy (172.16.0.23)
+
+```bash
+# 1. Loyihani serverga ko'chiring (git clone yoki scp)
+cd kamera
+
+# 2. Muhit sozlamalari (parol va kalitlarni ALMASHTIRING)
+cp .env.example .env
+nano .env
+
+# 3. Ishga tushirish
+docker compose up -d --build
+```
+
+Hestia'da `cam.ttysi.uz` domeni proxy shabloni bilan `172.16.0.23:3000` ga
+yo'naltiriladi. Panel: `https://cam.ttysi.uz`, HLS:
+`https://cam.ttysi.uz/hls/{slug}/index.m3u8` (login/parolsiz, istalgan saytga
+embed qilinadi).
+
+## Yangilash
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+> Transkod buyrug'i (`service/src/mediamtx.js`) o'zgarganda MediaMTX'dagi eski
+> yo'llar yangilanmaydi (mavjud yo'l uchun 400 qaytadi). To'liq yangilash:
+> `docker compose up -d --build --force-recreate`
+
+## Fayl tuzilishi
 
 ```
 kamera/
-├── service/   # SERVERDA turadi: MediaMTX + backend API + DB
-└── admin/     # Nuxt panel: server IP'siga ulanib kameralarni boshqaradi
+├── docker-compose.yml   # butun stack (gateway :3000, service, mediamtx)
+├── .env.example         # muhit namunasi (.env ga nusxalanadi, git'ga tushmaydi)
+├── mediamtx.yml         # MediaMTX: statik HLS + publish himoyasi
+├── gateway.conf         # nginx: SPA + /api proxy + /hls statik
+├── admin/               # Nuxt SPA (Docker ichida quriladi)
+└── service/             # Node API: kameralar, login, kodek aniqlash
 ```
 
-## Qanday ishlaydi
+Ish vaqtida yaratiladi (git'ga tushmaydi): `./data/` (kamera.db), `./hls/`
+(segmentlar).
 
-1. Admin panelda kamera (nom, IP, login, parol) qo'shiladi.
-2. Panel buni **service**ga yuboradi (server IP orqali).
-3. Service kamerani DB'ga yozadi va MediaMTX'ga "shu RTSP'ni tort" deydi.
-4. Service tashqi URL qaytaradi: `https://stream.../kamera-1/index.m3u8?token=...`
-5. Boshqa platformalar shu URL bilan oqimni o'ynatadi. **Login/parol tashqariga chiqmaydi.**
+## API (tashqi tizimlar uchun)
 
-Himoya: har bir ko'rish urinishida MediaMTX service'dan token tekshiradi. Token qisqa muddatli (default 60s).
+Boshqa backend (masalan LMS) kamera API'sini `x-api-key: <SERVICE_API_KEY>`
+sarlavhasi bilan chaqira oladi:
 
----
-
-## 1-qism: Service (serverda)
-
-Server — kameralar bilan bir tarmoqdagi kompyuter.
-
-```bash
-cd service
-cp .env.example .env        # kalitlarni ALMASHTIRING
-# Docker bilan (MediaMTX ham birga ko'tariladi):
-docker compose up -d
-```
-
-Yoki Docker'siz (MediaMTX'ni alohida o'rnatib):
-
-```bash
-cd service
-npm install
-node src/index.js           # http://0.0.0.0:4000
-```
-
-`.env` dagi muhim qiymatlar:
-
-- `SERVICE_API_KEY` — admin panel bilan bir xil bo'lishi shart
-- `JWT_SECRET` — token imzosi (boshqa, uzun, tasodifiy)
-- `STREAM_BASE` — tashqi domen (Cloudflare Tunnel / domeningiz)
-
-## 2-qism: Admin panel (Nuxt)
-
-Panel istalgan joyda ishlashi mumkin — u serverga **IP orqali** ulanadi.
-
-```bash
-cd admin
-npm install
-cp .env.example .env        # NUXT_PUBLIC_SERVICE_BASE = http://SERVER-IP:4000
-npm run dev                 # http://localhost:3000
-```
-
-`.env`:
-
-- `NUXT_PUBLIC_SERVICE_BASE` — serverdagi service manzili (masalan `http://192.168.1.50:4000`)
-- `NUXT_SERVICE_API_KEY` — service'dagi `SERVICE_API_KEY` bilan bir xil
-- `NUXT_ADMIN_PASSWORD` — panelga kirish paroli (panel ochilganda so'raladi)
-- `NUXT_SESSION_SECRET` — kirish cookie'sini imzolash kaliti (uzun, tasodifiy)
-
-API kalit faqat Nuxt serverida ishlatiladi (brauzerga chiqmaydi) — panel o'zining
-`/api/...` route'lari orqali service'ga proxy qiladi.
-
-### Panelga kirish (auth)
-
-Panel parol bilan himoyalangan. Ochilganda login sahifasi chiqadi; `NUXT_ADMIN_PASSWORD`
-to'g'ri kiritilsa 7 kunlik imzolangan cookie beriladi. Parol va imzo kaliti faqat Nuxt
-serverida turadi — brauzerga chiqmaydi. Kamera API route'lari ham server tomonda
-tekshiriladi, shuning uchun to'g'ridan-to'g'ri so'rov ham parolsiz o'tmaydi. Yuqori o'ng
-burchakdagi "Chiqish" tugmasi cookie'ni o'chiradi.
-
----
-
-## Internetga chiqarish
-
-Server NAT ortida bo'lsa, **Cloudflare Tunnel** tavsiya etiladi (router sozlash shart emas,
-HTTPS avtomatik). Tunnel orqali:
-
-- MediaMTX HLS porti `:8888` → `stream.institut.uz`
-- Service porti `:4000` → `service.institut.uz` (agar panel tashqaridan ulansa)
-
-`STREAM_BASE` va `NUXT_PUBLIC_SERVICE_BASE`ni shu domenlarga qo'ying.
-
-## Keyingi qadamlar
-
-- Kamera brendi Hikvision/Dahua bo'lsa RTSP yo'li avtomatik. Boshqasi bo'lsa "qo'lda" tanlang.
-- WebRTC (<1s kechikish) kerak bo'lsa, alohida TURN server qo'shiladi.
-- ~~Panelga login (auth) qo'shish~~ — ✅ bajarildi (parol + imzolangan cookie).
-- Foydalanuvchilar ko'p bo'lsa: bitta umumiy parol o'rniga foydalanuvchi nomi/parol va rollar.
+- `GET  /api/cameras` — ro'yxat (har birida `hls` URL)
+- `POST /api/cameras` — qo'shish: `{ name, ip, port?, login, parol, rtspPath? }`
+- `DELETE /api/cameras/:id` — o'chirish

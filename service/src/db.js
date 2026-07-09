@@ -32,4 +32,11 @@ db.exec(`
   );
 `);
 
+// Migratsiya: `codec` ustuni keyin qo'shildi (h264 / hevc). ffprobe bilan
+// aniqlanadi va shunga qarab transkod qilinadi yoki to'g'ridan uzatiladi.
+const cols = db.prepare("PRAGMA table_info(cameras)").all().map((c) => c.name);
+if (!cols.includes("codec")) {
+  db.exec("ALTER TABLE cameras ADD COLUMN codec TEXT");
+}
+
 export default db;

@@ -1,4 +1,4 @@
-// Static SPA to'g'ridan service'ga (boshqa serverdagi IP/domen) ulanadi.
+// SPA gateway'ning /api yo'liga (same-origin) so'rov yuboradi.
 // Avtorizatsiya — admin Bearer tokeni (useApi qo'shadi).
 export function useCameras() {
   const { call } = useApi();
@@ -10,10 +10,7 @@ export function useCameras() {
 
   const remove = (id: number) => call(`/api/cameras/${id}`, { method: "DELETE" });
 
-  const refreshUrls = (slug: string): Promise<Camera> =>
-    call(`/api/cameras/${slug}/token`);
-
-  return { list, add, remove, refreshUrls };
+  return { list, add, remove };
 }
 
 export interface NewCamera {
@@ -31,7 +28,5 @@ export interface Camera {
   slug: string;
   ip?: string;
   hls: string;
-  webrtc: string;
-  embed: string;
   created_at?: string;
 }

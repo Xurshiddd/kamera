@@ -1,0 +1,13 @@
+# Docker build kontekstiga tushmasin (image kichik va toza bo'lsin).
+node_modules
+.output
+.nuxt
+.data
+dist
+.git
+.gitignore
+
+# Maxfiy/lokal sozlamalar image ichiga KIRMASIN.
+# (nuxt.config default: serviceBase="" -> admin /api ni same-origin chaqiradi)
+.env
+.env.*

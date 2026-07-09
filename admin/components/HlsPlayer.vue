@@ -23,7 +23,18 @@ function load() {
     // MediaMTX'ning LL-HLS chiqishi hls.js'ning low-latency rejimida ishonchsiz:
     // efir ochilmay osilib qoladi. Kamera kuzatuvida past kechikish shart emas,
     // shuning uchun oddiy (barqaror) HLS rejimini ishlatamiz.
-    hls = new Hls({ lowLatencyMode: false });
+    hls = new Hls({
+      lowLatencyMode: false,
+      // BARQARORLIK: efirdan 3 segment (2s x 3 = 6s) orqada turadi, oldinda 20s
+      // gacha buferlaydi -> tarmoq sekinlashsa ham uzilmaydi (tebranishni yutadi).
+      liveSyncDurationCount: 3,
+      maxBufferLength: 20,
+      backBufferLength: 10, // xotira o'smasin
+      // Segment/playlist yuklashda vaqtincha xato bo'lsa ko'proq qayta urinsin.
+      fragLoadingMaxRetry: 8,
+      manifestLoadingMaxRetry: 6,
+      levelLoadingMaxRetry: 6,
+    });
     hls.loadSource(props.src);
     hls.attachMedia(el);
 

@@ -1,0 +1,52 @@
+# =============================================================================
+#  Butun stack — 172.16.0.23 serverida Docker'da ishlaydi.
+#
+#  Hestia: cam.ttysi.uz -> proxy -> http://172.16.0.23:3000 (gateway)
+#
+#  Ishga tushirish (loyiha ildizida):
+#      cp .env.example .env   # birinchi marta: parol/kalitlarni ALMASHTIRING
+#      docker compose up -d --build
+#
+#  Loglar:      docker compose logs -f
+#  To'xtatish:  docker compose down
+#
+#  Konteynerlar (faqat gateway tashqariga ochiladi):
+#      gateway  :3000 -> admin SPA + /api (service) + /hls (statik segmentlar)
+#      service  :4000 (ichki) -> kamera CRUD, kodek aniqlash, MediaMTX boshqaruvi
+#      mediamtx :8554/:9997 (ichki) -> RTSP tortadi, HLS'ni /hls diskka yozadi
+# =============================================================================
+
+services:
+  mediamtx:
+    # -ffmpeg variant: ichida ffmpeg + libx264 bor (H265 -> H264 transkod uchun).
+    image: bluenviron/mediamtx:latest-ffmpeg
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+      - ./hls:/hls # HLS segmentlari diskka -> gateway statik beradi
+    restart: unless-stopped
+
+  service:
+    build: ./service
+    image: kamera-service:latest
+    env_file: .env
+    environment:
+      # Bridge tarmoqda MediaMTX konteyner nomi orqali topiladi.
+      - MEDIAMTX_API=http://mediamtx:9997
+    volumes:
+      - ./data:/app/data # kamera.db shu yerda saqlanadi
+    restart: unless-stopped
+    depends_on:
+      - mediamtx
+
+  # Admin SPA (Nuxt, Docker ichida quriladi) + /api proxy + /hls statik.
+  gateway:
+    build: ./admin
+    image: kamera-gateway:latest
+    ports:
+      - "3000:80" # Hestia shu portga proxy qiladi
+    volumes:
+      - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./hls:/hls:ro # MediaMTX yozgan statik HLS (faqat o'qish)
+    restart: unless-stopped
+    depends_on:
+      - service

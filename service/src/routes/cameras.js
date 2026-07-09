@@ -1,6 +1,6 @@
 import { Router } from "express";
 import db from "../db.js";
-import { addPath, deletePath } from "../mediamtx.js";
+import { addPath, deletePath, probeCodec } from "../mediamtx.js";
 import { requireAuth } from "../auth.js";
 
 const router = Router();
@@ -16,15 +16,10 @@ function makeSlug(name) {
     .replace(/^-+|-+$/g, "");
 }
 
-// Bitta kamera uchun tashqi URL'larni yasaymiz. Ko'rish ochiq (MediaMTX'da
-// read/playback auth'dan chiqarilgan), shuning uchun token KERAK EMAS —
-// URL toza bo'ladi va boshqa saytga qo'yilganda muddatsiz ishlaydi.
+// Kameraning tashqi HLS URL'i. Ko'rish ochiq (statik fayllar), shuning uchun
+// token KERAK EMAS — URL toza va boshqa saytga qo'yilganda muddatsiz ishlaydi.
 function publicUrls(slug) {
-  return {
-    hls: `${BASE}/${slug}/index.m3u8`,
-    webrtc: `${BASE}/${slug}/whep`,
-    embed: `${BASE}/${slug}`,
-  };
+  return { hls: `${BASE}/${slug}/index.m3u8` };
 }
 
 // Hamma kamerani ko'rsatish (parolsiz).
@@ -56,7 +51,12 @@ router.post("/", requireAuth, async (req, res) => {
     login,
     parol,
     rtsp_path: rtspPath || DEFAULT_RTSP,
+    codec: null,
   };
+
+  // Kamera H264 mi H265 mi? H264 bo'lsa transkod qilinmaydi (CPU tejaladi).
+  // Aniqlanmasa (null) — xavfsiz tanlov sifatida transkod qilinadi.
+  camera.codec = await probeCodec(camera);
 
   try {
     await addPath(camera); // avval MediaMTX, keyin DB
@@ -66,19 +66,14 @@ router.post("/", requireAuth, async (req, res) => {
 
   const info = db
     .prepare(
-      `INSERT INTO cameras (name, slug, ip, port, login, parol, rtsp_path)
-       VALUES (@name, @slug, @ip, @port, @login, @parol, @rtsp_path)`
+      `INSERT INTO cameras (name, slug, ip, port, login, parol, rtsp_path, codec)
+       VALUES (@name, @slug, @ip, @port, @login, @parol, @rtsp_path, @codec)`
     )
     .run(camera);
 
-  res.status(201).json({ id: info.lastInsertRowid, name, slug, ...publicUrls(slug) });
-});
-
-// Bitta kamera uchun yangi (yangilangan) tomosha tokeni — eski muddati tugaganda.
-router.get("/:slug/token", requireAuth, (req, res) => {
-  const row = db.prepare("SELECT slug FROM cameras WHERE slug = ?").get(req.params.slug);
-  if (!row) return res.status(404).json({ error: "Topilmadi" });
-  res.json(publicUrls(row.slug));
+  res
+    .status(201)
+    .json({ id: info.lastInsertRowid, name, slug, codec: camera.codec, ...publicUrls(slug) });
 });
 
 // Kamerani o'chirish.

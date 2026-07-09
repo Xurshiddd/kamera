@@ -68,11 +68,6 @@ onMounted(reload);
             <input class="input mono" :value="c.hls" readonly />
             <button class="btn" @click="copy(c.hls)">Nusxa</button>
           </div>
-          <div class="url-row">
-            <span class="tag">Embed</span>
-            <input class="input mono" :value="c.embed" readonly />
-            <button class="btn" @click="copy(c.embed)">Nusxa</button>
-          </div>
         </div>
       </article>
     </div>

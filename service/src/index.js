@@ -10,17 +10,13 @@ import { syncCameras } from "./syncCameras.js";
 const app = express();
 app.use(express.json());
 
-// Admin static SPA boshqa manzilda (boshqa IP/domen) turadi va brauzerdan
-// to'g'ridan shu service'ga ulanadi. ADMIN_ORIGIN'da ruxsat etilgan
-// manzillarni vergul bilan sanab bering (masalan: http://192.168.1.50/admin).
-// Bo'sh bo'lsa (dev) — hamma origin'ga ruxsat.
-const ORIGINS = (process.env.ADMIN_ORIGIN || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-app.use(cors({ origin: ORIGINS.length ? ORIGINS : true }));
+// Admin SPA gateway orqali same-origin keladi — CORS aslida kerak emas.
+// Ochiq qoldiramiz: tashqi backend (LMS) API kalit bilan to'g'ridan chaqirsa
+// ham ishlasin; himoya baribir auth'da (Bearer token / x-api-key).
+app.use(cors());
 
-app.get("/health", (req, res) => res.json({ ok: true }));
+// Gateway /api/* ni prefiksi bilan uzatadi, shuning uchun health ham /api ostida.
+app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 // MediaMTX'ning auth-callback'i (himoya tokenda, API kalitda emas)
 app.use("/api", streamAuthRouter);

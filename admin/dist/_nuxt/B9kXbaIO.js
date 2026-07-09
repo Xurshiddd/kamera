@@ -1,1 +1,0 @@
-import{J as u,H as o,K as c}from"./CTMQLsLW.js";function l(){const e=u().public.serviceBase,{token:a,clear:r}=o();async function n(i,t={}){try{return await $fetch(`${e}${i}`,{...t,headers:{...t.headers||{},...a.value?{Authorization:`Bearer ${a.value}`}:{}}})}catch(s){throw s?.response?.status===401&&(r(),await c("/login")),s}}return{call:n,base:e}}export{l as u};

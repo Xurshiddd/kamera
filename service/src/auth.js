@@ -6,16 +6,6 @@ const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 // Admin (brauzer) session tokeni qancha amal qiladi (soniya). Default 12 soat.
 const ADMIN_TTL = Number(process.env.ADMIN_TOKEN_TTL_SECONDS || 12 * 60 * 60);
 
-// Admin panel -> service so'rovlarini API kalit bilan himoyalaymiz.
-// Server-to-server (yoki eski) chaqiruvlar har so'rovda "x-api-key" yuboradi.
-export function requireApiKey(req, res, next) {
-  const key = req.get("x-api-key");
-  if (!API_KEY || key !== API_KEY) {
-    return res.status(401).json({ error: "Noto'g'ri API kalit" });
-  }
-  next();
-}
-
 // --- Admin (brauzer) login ---
 // Static SPA serverda ishlamaydi, shuning uchun parol tekshiruvi va session
 // shu yerda (service'da) bo'ladi. SPA parolni yuboradi, JWT token oladi va
