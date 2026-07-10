@@ -1,5 +1,4 @@
 <script setup lang="ts">
-const cfg = useRuntimeConfig();
 const route = useRoute();
 const router = useRouter();
 const { clear } = useAuth();
@@ -23,6 +22,7 @@ async function logout() {
       <nav v-if="!onLogin" class="nav">
         <NuxtLink to="/">Kameralar</NuxtLink>
         <NuxtLink to="/add">+ Qo'shish</NuxtLink>
+        <NuxtLink to="/status">Server holati</NuxtLink>
         <button class="logout" @click="logout">Chiqish</button>
       </nav>
     </header>
@@ -31,22 +31,21 @@ async function logout() {
       <NuxtPage />
     </main>
 
-    <footer class="foot">
-      Server: <code>{{ cfg.public.serviceBase || "sozlanmagan" }}</code>
-    </footer>
+    <footer class="foot">MediaMTX + HLS — kameralar jonli efirda</footer>
   </div>
 </template>
 
 <style>
 :root {
-  --bg: #0e1116;
-  --panel: #161b22;
-  --panel-2: #1c232d;
-  --line: #2a323d;
+  --bg: #0b0e13;
+  --panel: #141922;
+  --panel-2: #1b2230;
+  --line: #263041;
   --text: #e6edf3;
   --muted: #8b97a6;
   --accent: #4cc2ff;
   --ok: #3fb950;
+  --warn: #d29922;
   --danger: #f85149;
   --radius: 12px;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -69,12 +68,16 @@ body {
 }
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 14px 20px;
   border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  backdrop-filter: blur(8px);
 }
 .brand {
   display: flex;
@@ -94,12 +97,17 @@ body {
 }
 .nav {
   display: flex;
+  align-items: center;
   gap: 18px;
 }
 .nav a {
   color: var(--muted);
   text-decoration: none;
   font-size: 14px;
+  transition: color 0.15s ease;
+}
+.nav a:hover {
+  color: var(--text);
 }
 .nav a.router-link-exact-active {
   color: var(--accent);
@@ -119,7 +127,7 @@ body {
 .main {
   flex: 1;
   width: 100%;
-  max-width: 1000px;
+  max-width: 1100px;
   margin: 0 auto;
   padding: 24px 20px;
 }
@@ -139,6 +147,9 @@ code {
 
 /* umumiy elementlar */
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border: 1px solid var(--line);
   background: var(--panel-2);
   color: var(--text);
@@ -146,9 +157,20 @@ code {
   border-radius: 9px;
   font-size: 14px;
   cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
 .btn:hover {
   border-color: var(--accent);
+}
+.btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 8px;
 }
 .btn-primary {
   background: var(--accent);
@@ -156,8 +178,14 @@ code {
   color: #04212f;
   font-weight: 600;
 }
+.btn-primary:hover {
+  filter: brightness(1.08);
+}
 .btn-danger {
   color: var(--danger);
+}
+.btn-danger:hover {
+  border-color: var(--danger);
 }
 .input {
   width: 100%;
@@ -171,11 +199,39 @@ code {
 .input:focus {
   outline: none;
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(76, 194, 255, 0.15);
 }
 .label {
   display: block;
   font-size: 13px;
   color: var(--muted);
   margin: 0 0 6px;
+}
+
+/* kodek/holat belgilari */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  border: 1px solid transparent;
+}
+.badge-ok {
+  color: var(--ok);
+  background: rgba(63, 185, 80, 0.12);
+  border-color: rgba(63, 185, 80, 0.35);
+}
+.badge-warn {
+  color: var(--warn);
+  background: rgba(210, 153, 34, 0.12);
+  border-color: rgba(210, 153, 34, 0.35);
+}
+.badge-muted {
+  color: var(--muted);
+  background: var(--panel-2);
+  border-color: var(--line);
 }
 </style>

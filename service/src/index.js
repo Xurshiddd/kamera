@@ -5,6 +5,7 @@ import cors from "cors";
 import camerasRouter from "./routes/cameras.js";
 import streamAuthRouter from "./routes/streamAuth.js";
 import loginRouter from "./routes/login.js";
+import statusRouter from "./routes/status.js";
 import { syncCameras } from "./syncCameras.js";
 
 const app = express();
@@ -23,6 +24,9 @@ app.use("/api", streamAuthRouter);
 
 // Brauzerdagi admin SPA uchun parol-login (JWT token qaytaradi)
 app.use("/api", loginRouter);
+
+// Server holati (uptime, RAM, disk, oqimlar) — admin sahifasi uchun
+app.use("/api", statusRouter);
 
 // Admin panel ishlatadigan kamera API'si (Bearer token yoki API kalit bilan)
 app.use("/api/cameras", camerasRouter);

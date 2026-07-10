@@ -21,7 +21,7 @@ export default defineNuxtConfig({
   // shunda /admin/login ga to'g'ridan kirilganda ham ishlaydi.
   nitro: {
     prerender: {
-      routes: ["/", "/login", "/add"],
+      routes: ["/", "/login", "/add", "/status"],
     },
   },
 

@@ -4,6 +4,7 @@ const { list, remove } = useCameras();
 const cameras = ref<Camera[]>([]);
 const loading = ref(true);
 const error = ref("");
+const copiedId = ref<number | null>(null);
 
 async function reload() {
   loading.value = true;
@@ -27,8 +28,19 @@ async function onDelete(c: Camera) {
   await reload();
 }
 
-function copy(text: string) {
-  navigator.clipboard?.writeText(text);
+async function copy(c: Camera) {
+  if (await copyText(c.hls)) {
+    copiedId.value = c.id;
+    setTimeout(() => {
+      if (copiedId.value === c.id) copiedId.value = null;
+    }, 1600);
+  }
+}
+
+function codecBadge(c: Camera) {
+  if (c.codec === "h264") return { label: "H.264", title: "To'g'ridan-to'g'ri (transkodsiz)", cls: "badge-ok" };
+  if (c.codec === "hevc") return { label: "H.265", title: "H.264 ga transkod qilinadi", cls: "badge-warn" };
+  return { label: "Kodek ?", title: "Kodek aniqlanmagan (kamera o'chiq bo'lishi mumkin)", cls: "badge-muted" };
 }
 
 onMounted(reload);
@@ -37,7 +49,12 @@ onMounted(reload);
 <template>
   <section>
     <div class="head">
-      <h1>Kameralar</h1>
+      <div>
+        <h1>Kameralar</h1>
+        <p v-if="!loading && cameras.length" class="sub">
+          {{ cameras.length }} ta kamera
+        </p>
+      </div>
       <NuxtLink to="/add" class="btn btn-primary">+ Kamera qo'shish</NuxtLink>
     </div>
 
@@ -50,24 +67,36 @@ onMounted(reload);
     <div v-else class="grid">
       <article v-for="c in cameras" :key="c.id" class="card">
         <div class="card-head">
-          <div>
+          <div class="title">
             <h3>{{ c.name }}</h3>
-            <span class="slug">{{ c.slug }}</span>
+            <div class="meta">
+              <span class="slug mono">{{ c.slug }}</span>
+              <span
+                class="badge"
+                :class="codecBadge(c).cls"
+                :title="codecBadge(c).title"
+              >
+                {{ codecBadge(c).label }}
+              </span>
+            </div>
           </div>
-          <button class="btn btn-danger" @click="onDelete(c)">O'chirish</button>
+          <div class="tools">
+            <NuxtLink :to="`/edit/${c.id}`" class="btn btn-sm">Tahrirlash</NuxtLink>
+            <button class="btn btn-sm btn-danger" @click="onDelete(c)">O'chirish</button>
+          </div>
         </div>
 
         <ClientOnly>
-          <!-- Login'dan keyin hamma kamera avtomatik jonli ochiladi (tugma yo'q) -->
+          <!-- Ochilmasa pleyer o'zi har 5s da qayta urinadi (HlsPlayer) -->
           <HlsPlayer :src="c.hls" />
         </ClientOnly>
 
-        <div class="urls">
-          <div class="url-row">
-            <span class="tag">HLS</span>
-            <input class="input mono" :value="c.hls" readonly />
-            <button class="btn" @click="copy(c.hls)">Nusxa</button>
-          </div>
+        <div class="url-row">
+          <span class="tag">HLS</span>
+          <input class="input mono url-input" :value="c.hls" readonly @focus="($event.target as HTMLInputElement).select()" />
+          <button class="btn btn-sm" :class="{ copied: copiedId === c.id }" @click="copy(c)">
+            {{ copiedId === c.id ? "✓ Nusxalandi" : "Nusxa" }}
+          </button>
         </div>
       </article>
     </div>
@@ -77,13 +106,18 @@ onMounted(reload);
 <style scoped>
 .head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   margin-bottom: 18px;
 }
 h1 {
   margin: 0;
   font-size: 22px;
+}
+.sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
 }
 .muted {
   color: var(--muted);
@@ -93,7 +127,7 @@ h1 {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 16px;
 }
 .card {
@@ -101,27 +135,38 @@ h1 {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   padding: 14px;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.card:hover {
+  border-color: #3a4551;
 }
 .card-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
+  gap: 8px;
   margin-bottom: 12px;
 }
-.card-head h3 {
-  margin: 0 0 2px;
+.title h3 {
+  margin: 0 0 4px;
   font-size: 16px;
+}
+.meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .slug {
   font-size: 12px;
   color: var(--muted);
 }
-.urls {
-  margin-top: 12px;
-  display: grid;
-  gap: 8px;
+.tools {
+  display: flex;
+  gap: 6px;
+  flex: none;
 }
 .url-row {
+  margin-top: 12px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -129,11 +174,19 @@ h1 {
 .tag {
   font-size: 11px;
   color: var(--muted);
-  width: 46px;
   flex: none;
+}
+.url-input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 .mono {
   font-family: ui-monospace, monospace;
-  font-size: 12px;
+}
+.copied {
+  color: var(--ok);
+  border-color: var(--ok);
 }
 </style>

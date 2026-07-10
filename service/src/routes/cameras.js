@@ -25,9 +25,18 @@ function publicUrls(slug) {
 // Hamma kamerani ko'rsatish (parolsiz).
 router.get("/", requireAuth, (req, res) => {
   const rows = db
-    .prepare("SELECT id, name, slug, ip, port, created_at FROM cameras ORDER BY id DESC")
+    .prepare("SELECT id, name, slug, ip, port, codec, created_at FROM cameras ORDER BY id DESC")
     .all();
   res.json(rows.map((r) => ({ ...r, ...publicUrls(r.slug) })));
+});
+
+// Bitta kamera — tahrirlash formasi uchun (parol QAYTARILMAYDI).
+router.get("/:id(\\d+)", requireAuth, (req, res) => {
+  const row = db
+    .prepare("SELECT id, name, slug, ip, port, login, rtsp_path, codec FROM cameras WHERE id = ?")
+    .get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Topilmadi" });
+  res.json({ ...row, ...publicUrls(row.slug) });
 });
 
 // Yangi kamera qo'shish.
@@ -74,6 +83,50 @@ router.post("/", requireAuth, async (req, res) => {
   res
     .status(201)
     .json({ id: info.lastInsertRowid, name, slug, codec: camera.codec, ...publicUrls(slug) });
+});
+
+// Kamerani tahrirlash. Slug (demak HLS URL) O'ZGARMAYDI — boshqa saytlarga
+// qo'yilgan embed'lar buzilmasligi uchun. Parol bo'sh kelsa eskisi qoladi.
+router.put("/:id(\\d+)", requireAuth, async (req, res) => {
+  const row = db.prepare("SELECT * FROM cameras WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).json({ error: "Topilmadi" });
+
+  const { name, ip, port, login, parol, rtspPath } = req.body || {};
+  const camera = {
+    ...row,
+    name: name || row.name,
+    ip: ip || row.ip,
+    port: Number(port || row.port),
+    login: login || row.login,
+    parol: parol || row.parol,
+    rtsp_path: rtspPath || row.rtsp_path,
+  };
+
+  // Avval eski ffmpeg'ni to'xtatamiz — kamera ulanishi bo'shasin (ko'p
+  // kameralar bir vaqtda 1-2 ta RTSP mijozgagina ruxsat beradi), keyin
+  // kodekni qayta aniqlaymiz (IP/oqim o'zgargan bo'lishi mumkin).
+  await deletePath(row.slug);
+  await new Promise((r) => setTimeout(r, 1500));
+  camera.codec = await probeCodec(camera);
+
+  try {
+    await addPath(camera);
+  } catch (e) {
+    return res.status(502).json({ error: "MediaMTX'ga ulanmadi: " + e.message });
+  }
+
+  db.prepare(
+    `UPDATE cameras SET name=@name, ip=@ip, port=@port, login=@login,
+       parol=@parol, rtsp_path=@rtsp_path, codec=@codec WHERE id=@id`
+  ).run(camera);
+
+  res.json({
+    id: row.id,
+    name: camera.name,
+    slug: camera.slug,
+    codec: camera.codec,
+    ...publicUrls(camera.slug),
+  });
 });
 
 // Kamerani o'chirish.
