@@ -5,6 +5,9 @@ const { clear } = useAuth();
 
 // Login sahifasida navigatsiya/chiqish tugmasi ko'rinmasin.
 const onLogin = computed(() => route.path === "/login");
+// "/" — mehmon (guest) jonli sahifa: admin panel/topbar chiqmaydi,
+// sahifa butun ekranni o'zi boshqaradi.
+const isGuest = computed(() => route.path === "/");
 
 async function logout() {
   clear();
@@ -14,24 +17,25 @@ async function logout() {
 
 <template>
   <div class="app">
-    <header class="topbar">
-      <NuxtLink to="/" class="brand">
+    <header v-if="!isGuest" class="topbar">
+      <NuxtLink to="/admin" class="brand">
         <span class="dot" />
         Kamera boshqaruvi
       </NuxtLink>
       <nav v-if="!onLogin" class="nav">
-        <NuxtLink to="/">Kameralar</NuxtLink>
+        <NuxtLink to="/admin">Kameralar</NuxtLink>
         <NuxtLink to="/add">+ Qo'shish</NuxtLink>
         <NuxtLink to="/status">Server holati</NuxtLink>
+        <NuxtLink to="/">Jonli sahifa</NuxtLink>
         <button class="logout" @click="logout">Chiqish</button>
       </nav>
     </header>
 
-    <main class="main">
+    <main class="main" :class="{ 'main-full': isGuest }">
       <NuxtPage />
     </main>
 
-    <footer class="foot">MediaMTX + HLS — kameralar jonli efirda</footer>
+    <footer v-if="!isGuest" class="foot">MediaMTX + HLS — kameralar jonli efirda</footer>
   </div>
 </template>
 
@@ -130,6 +134,11 @@ body {
   max-width: 1100px;
   margin: 0 auto;
   padding: 24px 20px;
+}
+/* Mehmon sahifasi butun ekranni oladi — chegara/padding yo'q */
+.main-full {
+  max-width: none;
+  padding: 0;
 }
 
 .foot {

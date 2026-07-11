@@ -21,8 +21,8 @@ async function submit() {
       body: { password: password.value },
     });
     set(token);
-    // Kirilgandan keyin asosiy sahifaga (yoki kelingan sahifaga) o'tamiz.
-    const back = (route.query.redirect as string) || "/";
+    // Kirilgandan keyin admin sahifasiga (yoki kelingan sahifaga) o'tamiz.
+    const back = (route.query.redirect as string) || "/admin";
     await router.push(back);
   } catch (e: any) {
     error.value = e?.data?.error || "Noto'g'ri parol.";

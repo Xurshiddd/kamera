@@ -10,7 +10,7 @@ async function submit(payload: NewCamera) {
   saving.value = true;
   try {
     await add(payload);
-    router.push("/");
+    router.push("/admin");
   } catch (e: any) {
     error.value = e?.data?.error || "Qo'shishda xatolik (service ulanmadi?).";
   } finally {

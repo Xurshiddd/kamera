@@ -21,7 +21,7 @@ async function submit(payload: NewCamera) {
   saving.value = true;
   try {
     await update(route.params.id as string, payload);
-    router.push("/");
+    router.push("/admin");
   } catch (e: any) {
     error.value = e?.data?.error || "Saqlashda xatolik (service ulanmadi?).";
   } finally {

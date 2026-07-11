@@ -1,8 +1,11 @@
 // Har bir sahifaga o'tishdan oldin ishlaydi (faqat klientda — SSR yo'q).
-// Token bo'lmasa /login ga yo'naltiradi. Token haqiqiyligini service'ning
-// o'zi (har API so'rovda) tekshiradi; bu yerda faqat tezkor tekshiruv.
+// "/" (mehmon jonli sahifa) va "/login" OCHIQ; qolgan sahifalar (admin
+// boshqaruvi) token talab qiladi. Token haqiqiyligini service'ning o'zi
+// (har API so'rovda) tekshiradi; bu yerda faqat tezkor tekshiruv.
+const PUBLIC_PATHS = ["/", "/login"];
+
 export default defineNuxtRouteMiddleware((to) => {
-  if (to.path === "/login") return;
+  if (PUBLIC_PATHS.includes(to.path)) return;
 
   const { token } = useAuth();
   if (!token.value) {

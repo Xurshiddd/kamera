@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 
 import camerasRouter from "./routes/cameras.js";
+import publicRouter from "./routes/public.js";
 import streamAuthRouter from "./routes/streamAuth.js";
 import loginRouter from "./routes/login.js";
 import statusRouter from "./routes/status.js";
@@ -24,6 +25,9 @@ app.use("/api", streamAuthRouter);
 
 // Brauzerdagi admin SPA uchun parol-login (JWT token qaytaradi)
 app.use("/api", loginRouter);
+
+// Mehmon (guest) sahifasi uchun ochiq kamera ro'yxati — auth'siz
+app.use("/api", publicRouter);
 
 // Server holati (uptime, RAM, disk, oqimlar) — admin sahifasi uchun
 app.use("/api", statusRouter);

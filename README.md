@@ -7,7 +7,8 @@ ko'rsatiladi. Hammasi **bitta serverda (172.16.0.23), Docker'da** ishlaydi.
 Brauzer ── https://cam.ttysi.uz ── Hestia proxy ──> http://172.16.0.23:3000
                                                           │
                                                     ┌─ gateway (nginx) ─┐
-                                                    │  /      admin SPA │
+                                                    │  /      SPA: mehmon jonli sahifa (loginsiz)
+                                                    │  /admin SPA: boshqaruv (/login orqali parol)
                                                     │  /api   ──> service:4000
                                                     │  /hls   statik HLS fayllar
                                                     └────────────────────┘
@@ -36,9 +37,13 @@ docker compose up -d --build
 ```
 
 Hestia'da `cam.ttysi.uz` domeni proxy shabloni bilan `172.16.0.23:3000` ga
-yo'naltiriladi. Panel: `https://cam.ttysi.uz`, HLS:
-`https://cam.ttysi.uz/hls/{slug}/index.m3u8` (login/parolsiz, istalgan saytga
-embed qilinadi).
+yo'naltiriladi.
+
+- Mehmon sahifa: `https://cam.ttysi.uz` — loginsiz jonli kuzatuv (2×2 grid,
+  pagination, "Ko'rish" bosilganda oqim ochiladi)
+- Boshqaruv: `https://cam.ttysi.uz/login` → parol → `/admin`
+- HLS: `https://cam.ttysi.uz/hls/{slug}/index.m3u8` (login/parolsiz, istalgan
+  saytga embed qilinadi)
 
 ## Yangilash
 
@@ -74,3 +79,6 @@ sarlavhasi bilan chaqira oladi:
 - `GET  /api/cameras` — ro'yxat (har birida `hls` URL)
 - `POST /api/cameras` — qo'shish: `{ name, ip, port?, login, parol, rtspPath? }`
 - `DELETE /api/cameras/:id` — o'chirish
+
+Ochiq (kalitsiz): `GET /api/public/cameras` — mehmon sahifa ro'yxati
+(faqat `id, name, slug, hls` — sirlar qaytmaydi).
