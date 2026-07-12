@@ -26,6 +26,7 @@ export interface NewCamera {
   login: string;
   parol: string; // edit'da bo'sh qoldirilsa serverda eskisi qoladi
   rtspPath?: string;
+  order?: number | null; // ko'rsatish tartibi; null = tartibsizlar keyin chiqadi
 }
 
 export type Codec = "h264" | "hevc" | null;
@@ -36,6 +37,7 @@ export interface Camera {
   slug: string;
   ip?: string;
   codec?: Codec;
+  order?: number | null;
   hls: string;
   created_at?: string;
 }

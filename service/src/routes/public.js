@@ -1,5 +1,6 @@
 import { Router } from "express";
 import db from "../db.js";
+import { DISPLAY_ORDER } from "./cameras.js";
 
 const router = Router();
 const BASE = process.env.STREAM_BASE || "http://localhost:8888";
@@ -10,7 +11,7 @@ const BASE = process.env.STREAM_BASE || "http://localhost:8888";
 // maxfiy ma'lumot ochmaydi.
 router.get("/public/cameras", (req, res) => {
   const rows = db
-    .prepare("SELECT id, name, slug FROM cameras ORDER BY id")
+    .prepare(`SELECT id, name, slug FROM cameras ORDER BY ${DISPLAY_ORDER}`)
     .all();
   res.json(
     rows.map((r) => ({ ...r, hls: `${BASE}/${r.slug}/index.m3u8` }))

@@ -20,6 +20,8 @@ const form = reactive({
   login: props.initial?.login || "",
   parol: "",
   rtspPath: props.initial?.rtsp_path || "",
+  // number input bo'shatilsa "" bo'ladi — submit'da null'ga aylantiramiz
+  order: (props.initial?.order ?? null) as number | "" | null,
 });
 
 // Mavjud RTSP yo'li brend namunasiga mos kelsa — o'sha brend tanlangan turadi.
@@ -49,6 +51,7 @@ function submit() {
     login: form.login,
     parol: form.parol,
     rtspPath: brand.value === "custom" ? form.rtspPath : rtspByBrand[brand.value],
+    order: form.order === "" || form.order === null ? null : Number(form.order),
   });
 }
 </script>
@@ -105,10 +108,25 @@ function submit() {
     </div>
     <p v-else class="hint mono">RTSP yo'li: {{ rtspByBrand[brand] }}</p>
 
+    <div>
+      <label class="label">Tartib raqami (ixtiyoriy)</label>
+      <input
+        v-model.number="form.order"
+        class="input"
+        type="number"
+        min="1"
+        placeholder="—"
+      />
+      <p class="hint">
+        Ro'yxatda nechanchi bo'lib chiqadi (1 — birinchi). Bo'sh qoldirilsa
+        tartib berilgan kameralardan keyin joylashadi.
+      </p>
+    </div>
+
     <p v-if="localError || error" class="err">{{ localError || error }}</p>
 
     <div class="actions">
-      <NuxtLink to="/" class="btn">Bekor qilish</NuxtLink>
+      <NuxtLink to="/admin" class="btn">Bekor qilish</NuxtLink>
       <button class="btn btn-primary" :disabled="saving" @click="submit">
         <template v-if="saving">
           {{ mode === "add" ? "Qo'shilmoqda…" : "Saqlanmoqda…" }}

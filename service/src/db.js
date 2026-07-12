@@ -39,4 +39,10 @@ if (!cols.includes("codec")) {
   db.exec("ALTER TABLE cameras ADD COLUMN codec TEXT");
 }
 
+// Migratsiya: `sort_order` — kamera ro'yxatda nechanchi bo'lib chiqishi.
+// NULL bo'lsa tartib berilganlardan KEYIN (id bo'yicha) joylashadi.
+if (!cols.includes("sort_order")) {
+  db.exec("ALTER TABLE cameras ADD COLUMN sort_order INTEGER");
+}
+
 export default db;

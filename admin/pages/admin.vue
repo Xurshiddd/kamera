@@ -70,6 +70,13 @@ onMounted(reload);
           <div class="title">
             <h3>{{ c.name }}</h3>
             <div class="meta">
+              <span
+                v-if="c.order != null"
+                class="badge badge-muted"
+                title="Ko'rsatish tartibi"
+              >
+                № {{ c.order }}
+              </span>
               <span class="slug mono">{{ c.slug }}</span>
               <span
                 class="badge"
