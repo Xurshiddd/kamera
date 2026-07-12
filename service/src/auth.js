@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 
 const API_KEY = process.env.SERVICE_API_KEY;
@@ -11,8 +12,14 @@ const ADMIN_TTL = Number(process.env.ADMIN_TOKEN_TTL_SECONDS || 12 * 60 * 60);
 // shu yerda (service'da) bo'ladi. SPA parolni yuboradi, JWT token oladi va
 // keyingi so'rovlarda "Authorization: Bearer <token>" yuboradi.
 
+// Doimiy vaqtli (timing-safe) taqqoslash: oddiy === har bir belgi mos kelganda
+// biroz sekinroq ishlaydi va parolni belgima-belgi topishga yo'l ochadi.
+// Ikkala qiymatni sha256 ga o'tkazish uzunlikni tenglashtiradi.
 export function checkAdminPassword(password) {
-  return Boolean(ADMIN_PASSWORD) && password === ADMIN_PASSWORD;
+  if (!ADMIN_PASSWORD || typeof password !== "string") return false;
+  const a = crypto.createHash("sha256").update(password).digest();
+  const b = crypto.createHash("sha256").update(ADMIN_PASSWORD).digest();
+  return crypto.timingSafeEqual(a, b);
 }
 
 export function issueAdminToken() {

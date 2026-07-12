@@ -90,10 +90,10 @@ onBeforeUnmount(() => {
           <span>Toshkent to'qimachilik va yengil sanoat instituti</span>
         </div>
       </div>
+      <!-- Admin kirish havolasi ATAYIN yo'q — /login faqat URL'ni bilganlar uchun -->
       <div class="g-right">
         <span class="live"><span class="live-dot" />LIVE</span>
         <span class="clock">{{ clock }}</span>
-        <NuxtLink to="/login" class="g-login" title="Administrator kirishi">Kirish</NuxtLink>
       </div>
     </header>
 
@@ -252,19 +252,6 @@ onBeforeUnmount(() => {
   font-weight: 600;
   font-size: 13px;
 }
-.g-login {
-  color: #c9dbf3;
-  font-size: 13px;
-  text-decoration: none;
-  border: 1px solid rgba(255, 255, 255, 0.25);
-  padding: 5px 12px;
-  border-radius: 999px;
-  transition: background 0.15s ease;
-}
-.g-login:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
 /* --- video devor (2×2) --- */
 .g-main {
   flex: 1;

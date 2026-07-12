@@ -10,7 +10,10 @@ import statusRouter from "./routes/status.js";
 import { syncCameras } from "./syncCameras.js";
 
 const app = express();
-app.use(express.json());
+app.disable("x-powered-by"); // texnologiya nomini oshkor qilmaymiz
+// Body kichik JSON'lardan iborat (login, kamera CRUD) — katta payload DoS'iga
+// yo'l qo'ymaslik uchun chegara.
+app.use(express.json({ limit: "16kb" }));
 
 // Admin SPA gateway orqali same-origin keladi — CORS aslida kerak emas.
 // Ochiq qoldiramiz: tashqi backend (LMS) API kalit bilan to'g'ridan chaqirsa
