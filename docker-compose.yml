@@ -32,8 +32,15 @@ services:
     environment:
       # Bridge tarmoqda MediaMTX konteyner nomi orqali topiladi.
       - MEDIAMTX_API=http://mediamtx:9997
+      - HLS_DIR=/hls
+      - HLS_PB_DIR=/hls-pb
     volumes:
       - ./data:/app/data # kamera.db shu yerda saqlanadi
+      # On-demand oqim to'xtaganda eski segmentlarni tozalash uchun (aks holda
+      # keyingi ochilishda pleyer qotib qolgan eski playlist'ni oladi).
+      - ./hls:/hls
+      # Yozuvlarni qayta ko'rish (playback) HLS sessiyalari — service yozadi.
+      - ./hls-pb:/hls-pb
     restart: unless-stopped
     depends_on:
       - mediamtx
@@ -43,10 +50,13 @@ services:
     build: ./admin
     image: kamera-gateway:latest
     ports:
-      - "3000:80" # Hestia shu portga proxy qiladi
+      # Tashqi port .env dagi GATEWAY_PORT dan (default 3000 — Hestia shunga
+      # proxy qiladi). Lokal kompyuterda 3000 band bo'lsa: GATEWAY_PORT=3001
+      - "${GATEWAY_PORT:-3000}:80"
     volumes:
       - ./gateway.conf:/etc/nginx/conf.d/default.conf:ro
       - ./hls:/hls:ro # MediaMTX yozgan statik HLS (faqat o'qish)
+      - ./hls-pb:/hls-pb:ro # playback sessiyalari (faqat o'qish)
     restart: unless-stopped
     depends_on:
       - service

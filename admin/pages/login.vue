@@ -1,16 +1,17 @@
 <script setup lang="ts">
+const username = ref("");
 const password = ref("");
 const error = ref("");
 const loading = ref(false);
 const router = useRouter();
 const route = useRoute();
 const { call } = useApi();
-const { set } = useAuth();
+const { set, loadMe, homePath } = useAuth();
 
 async function submit() {
   error.value = "";
-  if (!password.value) {
-    error.value = "Parolni kiriting.";
+  if (!username.value || !password.value) {
+    error.value = "Login va parolni kiriting.";
     return;
   }
   loading.value = true;
@@ -18,14 +19,15 @@ async function submit() {
     // Parolni to'g'ridan service'ga yuboramiz, token olamiz va saqlaymiz.
     const { token } = await call<{ token: string }>("/api/login", {
       method: "POST",
-      body: { password: password.value },
+      body: { username: username.value.trim(), password: password.value },
     });
     set(token);
-    // Kirilgandan keyin admin sahifasiga (yoki kelingan sahifaga) o'tamiz.
-    const back = (route.query.redirect as string) || "/admin";
+    await loadMe(true);
+    // Kirilgandan keyin kelingan sahifaga yoki ruxsatga mos "uy" sahifaga.
+    const back = (route.query.redirect as string) || homePath();
     await router.push(back);
   } catch (e: any) {
-    error.value = e?.data?.error || "Noto'g'ri parol.";
+    error.value = e?.data?.error || "Login yoki parol noto'g'ri.";
   } finally {
     loading.value = false;
   }
@@ -39,7 +41,18 @@ async function submit() {
         <span class="dot" />
         Kamera boshqaruvi
       </div>
-      <p class="muted">Davom etish uchun parolni kiriting.</p>
+      <p class="muted">Davom etish uchun login va parolni kiriting.</p>
+
+      <div>
+        <label class="label">Login</label>
+        <input
+          v-model="username"
+          class="input"
+          autocomplete="username"
+          placeholder="login"
+          autofocus
+        />
+      </div>
 
       <div>
         <label class="label">Parol</label>
@@ -47,8 +60,8 @@ async function submit() {
           v-model="password"
           class="input"
           type="password"
+          autocomplete="current-password"
           placeholder="••••••••"
-          autofocus
         />
       </div>
 

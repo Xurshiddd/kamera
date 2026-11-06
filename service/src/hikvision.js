@@ -1,0 +1,210 @@
+// =============================================================================
+//  Hikvision NVR klienti (ISAPI, HTTP Digest auth).
+//
+//  DIQQAT — vaqt: NVR ISAPI va RTSP playback'da vaqtni "...Z" bilan yozadi,
+//  lekin aslida bu NVR'ning MAHALLIY vaqti (Asia/Tashkent). Shuning uchun bu
+//  modul vaqtni "YYYY-MM-DDTHH:MM:SS" (mahalliy, zonasiz) satr sifatida
+//  qabul qiladi/qaytaradi va "Z"ni faqat formal ravishda qo'shadi/olib tashlaydi.
+// =============================================================================
+
+import crypto from "node:crypto";
+import http from "node:http";
+
+const md5 = (s) => crypto.createHash("md5").update(s).digest("hex");
+
+function parseChallenge(header) {
+  const out = {};
+  for (const m of header.matchAll(/(\w+)=(?:"([^"]*)"|([^,\s]*))/g)) {
+    out[m[1].toLowerCase()] = m[2] ?? m[3];
+  }
+  return out;
+}
+
+function digestHeader(nvr, method, uri, ch) {
+  const nc = "00000001";
+  const cnonce = crypto.randomBytes(8).toString("hex");
+  const ha1 = md5(`${nvr.login}:${ch.realm}:${nvr.parol}`);
+  const ha2 = md5(`${method}:${uri}`);
+  const qop = ch.qop ? ch.qop.split(",")[0].trim() : null;
+  const response = qop
+    ? md5(`${ha1}:${ch.nonce}:${nc}:${cnonce}:${qop}:${ha2}`)
+    : md5(`${ha1}:${ch.nonce}:${ha2}`);
+  let h =
+    `Digest username="${nvr.login}", realm="${ch.realm}", nonce="${ch.nonce}", ` +
+    `uri="${uri}", response="${response}"`;
+  if (qop) h += `, qop=${qop}, nc=${nc}, cnonce="${cnonce}"`;
+  if (ch.opaque) h += `, opaque="${ch.opaque}"`;
+  return h;
+}
+
+// ISAPI so'rovi: avval auth'siz, 401 kelsa digest bilan qaytariladi.
+export async function isapi(nvr, path, { method = "GET", body, timeout = 15000 } = {}) {
+  const url = `http://${nvr.ip}:${nvr.http_port || 80}${path}`;
+  const headers = body ? { "Content-Type": "application/xml" } : {};
+  const opts = () => ({ method, body, headers: { ...headers }, signal: AbortSignal.timeout(timeout) });
+
+  let res = await fetch(url, opts());
+  if (res.status === 401) {
+    const www = res.headers.get("www-authenticate") || "";
+    await res.arrayBuffer().catch(() => {});
+    if (!/^digest/i.test(www)) throw new Error("NVR digest auth so'ramadi");
+    const o = opts();
+    o.headers.Authorization = digestHeader(nvr, method, path, parseChallenge(www));
+    res = await fetch(url, o);
+  }
+  const text = await res.text();
+  if (res.status === 401) throw new Error("NVR login yoki parol noto'g'ri");
+  if (!res.ok) throw new Error(`NVR HTTP ${res.status}`);
+  return text;
+}
+
+// --- Kichik XML yordamchilar (ISAPI javoblari oddiy, kutubxona shart emas) ---
+const tag = (xml, name) => {
+  const m = xml.match(new RegExp(`<${name}>([^<]*)</${name}>`));
+  return m ? decodeXml(m[1]) : null;
+};
+const blocks = (xml, name) =>
+  [...xml.matchAll(new RegExp(`<${name}[ >][\\s\\S]*?</${name}>`, "g"))].map((m) => m[0]);
+const decodeXml = (s) =>
+  s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+
+export async function deviceInfo(nvr) {
+  const x = await isapi(nvr, "/ISAPI/System/deviceInfo", { timeout: 8000 });
+  return {
+    model: tag(x, "model"),
+    name: tag(x, "deviceName"),
+    serial: tag(x, "serialNumber"),
+    firmware: tag(x, "firmwareVersion"),
+  };
+}
+
+// IP kanallar: [{ channel, name, ip, online }]
+export async function listChannels(nvr) {
+  const [cx, sx] = await Promise.all([
+    isapi(nvr, "/ISAPI/ContentMgmt/InputProxy/channels"),
+    isapi(nvr, "/ISAPI/ContentMgmt/InputProxy/channels/status").catch(() => ""),
+  ]);
+  const online = new Map(
+    blocks(sx, "InputProxyChannelStatus").map((b) => [Number(tag(b, "id")), tag(b, "online") === "true"])
+  );
+  return blocks(cx, "InputProxyChannel").map((b) => ({
+    channel: Number(tag(b, "id")),
+    name: (tag(b, "name") || "").trim(),
+    ip: tag(b, "ipAddress"),
+    online: online.get(Number(tag(b, "id"))) ?? null,
+  }));
+}
+
+// Kanal/oqim -> RTSP "trackID": 1-kanal asosiy oqim = 101, qo'shimcha = 102.
+export const trackId = (channel, stream = "main") => `${channel}0${stream === "sub" ? 2 : 1}`;
+
+// "YYYY-MM-DDTHH:MM:SS" (mahalliy) -> ISAPI "…Z" va qaytarish.
+const toNvr = (local) => `${local}Z`;
+const fromNvr = (s) => s.replace(/Z$/, "").slice(0, 19);
+
+// Yozuv FAYLLARI (NVR ichidagi bo'laklar): [{ start, end, uri }] — vaqtlar
+// mahalliy satr. Oraliqqa qisman tushgan fayl ham qaytadi (haqiqiy chegarasi
+// bilan, agar so'rov oynasi uni to'liq qamrasa). NVR bir martada cheklangan
+// son qaytaradi -> sahifalab olamiz.
+export async function searchFiles(nvr, channel, from, to, { max = 2000 } = {}) {
+  const out = [];
+  const searchId = crypto.randomUUID().toUpperCase();
+  for (let pos = 0; pos < max; ) {
+    const body =
+      `<?xml version="1.0" encoding="UTF-8"?><CMSearchDescription>` +
+      `<searchID>${searchId}</searchID>` +
+      `<trackList><trackID>${trackId(channel)}</trackID></trackList>` +
+      `<timeSpanList><timeSpan><startTime>${toNvr(from)}</startTime>` +
+      `<endTime>${toNvr(to)}</endTime></timeSpan></timeSpanList>` +
+      `<maxResults>100</maxResults><searchResultPostion>${pos}</searchResultPostion>` +
+      `<metadataList><metadataDescriptor>//recordType.meta.std-cgi.com</metadataDescriptor></metadataList>` +
+      `</CMSearchDescription>`;
+    const x = await isapi(nvr, "/ISAPI/ContentMgmt/search", { method: "POST", body, timeout: 30000 });
+    const items = blocks(x, "searchMatchItem").map((b) => ({
+      start: fromNvr(tag(b, "startTime") || ""),
+      end: fromNvr(tag(b, "endTime") || ""),
+      uri: tag(b, "playbackURI"),
+    }));
+    out.push(...items.filter((i) => i.start && i.end && i.uri));
+    if (tag(x, "responseStatusStrg") !== "MORE" || !items.length) break;
+    pos += items.length;
+  }
+  out.sort((a, b) => a.start.localeCompare(b.start));
+  return out;
+}
+
+// Timeline uchun: ketma-ket (uzilishsiz) bo'laklar birlashtirilgan oraliqlar.
+export async function searchRecordings(nvr, channel, from, to) {
+  const merged = [];
+  for (const r of await searchFiles(nvr, channel, from, to)) {
+    const last = merged[merged.length - 1];
+    if (last && r.start <= last.end) {
+      if (r.end > last.end) last.end = r.end;
+    } else merged.push({ start: r.start, end: r.end });
+  }
+  return merged;
+}
+
+// Yozuv faylini yuklab olish (ISAPI download) — tarmoq tezligida (RTSP
+// playback'dek real vaqtda emas). Hikvision GET + XML body talab qiladi
+// (fetch buni qilolmaydi) va URI'da name/size bo'lishi SHART; NVR vaqt
+// bo'yicha qirqmaydi — butun faylni beradi (qirqish ffmpeg'da).
+// Qaytaradi: http.IncomingMessage (MPEG-PS oqimi). Chaqiruvchi .destroy() qila oladi.
+export function downloadFile(nvr, uri) {
+  const esc = uri.replace(/&/g, "&amp;");
+  const body = `<downloadRequest><playbackURI>${esc}</playbackURI></downloadRequest>`;
+  const path = "/ISAPI/ContentMgmt/download";
+
+  const send = (auth) =>
+    new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          host: nvr.ip,
+          port: nvr.http_port || 80,
+          path,
+          method: "GET",
+          headers: {
+            "Content-Type": "application/xml",
+            "Content-Length": Buffer.byteLength(body),
+            ...(auth ? { Authorization: auth } : {}),
+          },
+          timeout: 30000,
+        },
+        resolve
+      );
+      req.on("timeout", () => req.destroy(new Error("NVR javob bermadi (timeout)")));
+      req.on("error", reject);
+      req.end(body);
+    });
+
+  return (async () => {
+    let res = await send(null);
+    if (res.statusCode === 401) {
+      const www = res.headers["www-authenticate"] || "";
+      res.resume();
+      res = await send(digestHeader(nvr, "GET", path, parseChallenge(www)));
+    }
+    if (res.statusCode !== 200) {
+      let txt = "";
+      for await (const c of res) txt += c;
+      throw new Error(`NVR download HTTP ${res.statusCode}: ${tag(txt, "subStatusString") || tag(txt, "statusString") || ""}`);
+    }
+    res.setTimeout(0);
+    return res;
+  })();
+}
+
+// RTSP manzillar (login/parol ichida — faqat server ichida ishlatiladi).
+function rtspBase(nvr) {
+  return `rtsp://${encodeURIComponent(nvr.login)}:${encodeURIComponent(nvr.parol)}@${nvr.ip}:${nvr.rtsp_port || 554}`;
+}
+export function liveUrl(nvr, channel, stream = "main") {
+  return `${rtspBase(nvr)}/Streaming/Channels/${trackId(channel, stream)}`;
+}
+// start/end: "YYYY-MM-DDTHH:MM:SS" mahalliy vaqt.
+export function playbackUrl(nvr, channel, start, end) {
+  const f = (s) => s.replace(/[-:]/g, "") + "Z";
+  let u = `${rtspBase(nvr)}/Streaming/tracks/${trackId(channel)}?starttime=${f(start)}`;
+  if (end) u += `&endtime=${f(end)}`;
+  return u;
+}

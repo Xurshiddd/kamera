@@ -1,23 +1,61 @@
 <script setup lang="ts">
 import Hls from "hls.js";
 
-const props = defineProps<{ src: string }>();
+// cameraId berilsa — ko'rish davomida har 20s da service'ga heartbeat
+// yuboriladi. NVR kameralari shu orqali so'rov bo'yicha yoqiladi va hech kim
+// ko'rmay qo'ygach ~1 daqiqada o'chadi.
+// vod=true — yozuv (playback) rejimi: boshidan o'ynaydi, jonli chetga sakramaydi
+// va joriy vaqtni "time" hodisasi bilan bildiradi.
+const props = defineProps<{ src: string; cameraId?: number; vod?: boolean }>();
+const emit = defineEmits<{ (e: "time", seconds: number): void }>();
+const watchError = ref("");
+let beatTimer: ReturnType<typeof setInterval> | null = null;
+
+async function heartbeat() {
+  if (!props.cameraId || destroyed) return;
+  const base = useRuntimeConfig().public.serviceBase as string;
+  const { token } = useAuth();
+  try {
+    await $fetch(`${base}/api/live/${props.cameraId}/watch`, {
+      method: "POST",
+      headers: token.value ? { Authorization: `Bearer ${token.value}` } : {},
+    });
+    watchError.value = "";
+  } catch (e: any) {
+    watchError.value = e?.data?.error || "";
+  }
+}
+
+function startBeat() {
+  stopBeat();
+  if (!props.cameraId) return;
+  heartbeat();
+  beatTimer = setInterval(heartbeat, 20000);
+}
+function stopBeat() {
+  if (beatTimer) clearInterval(beatTimer);
+  beatTimer = null;
+}
 const video = ref<HTMLVideoElement | null>(null);
 const waiting = ref(true); // oqim hali ochilmagan -> "ulanmoqda" qoplamasi
 let hls: Hls | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let destroyed = false;
+let attempts = 0; // ketma-ket muvaffaqiyatsiz urinishlar
 
 // Kamera o'chiq / ffmpeg endi ishga tushayotgan bo'lsa playlist hali yo'q (404).
 // Bunday holatda HAR 5 SEKUNDDA qaytadan urinamiz — kamera tayyor bo'lishi
 // bilan video o'zi ochiladi (sahifani yangilash shart emas).
+// NVR kamerasi so'rov bo'yicha ~3s da yoqiladi — shuning uchun dastlabki
+// urinishlar tez (1.5s), keyin har 5s.
 function scheduleRetry() {
   waiting.value = true;
   if (retryTimer || destroyed) return;
+  attempts++;
   retryTimer = setTimeout(() => {
     retryTimer = null;
     load();
-  }, 5000);
+  }, attempts <= 6 ? 1500 : 5000);
 }
 
 function cleanup() {
@@ -49,7 +87,9 @@ function load() {
   // 20s gacha buferlaydi -> tarmoq tebranishini yutadi.
   hls = new Hls({
     lowLatencyMode: false,
-    liveSyncDurationCount: 3,
+    ...(props.vod
+      ? { startPosition: 0, liveSyncDurationCount: 1e6, liveMaxLatencyDurationCount: Infinity }
+      : { liveSyncDurationCount: 3 }),
     maxBufferLength: 20,
     backBufferLength: 10,
     fragLoadingMaxRetry: 6,
@@ -60,7 +100,10 @@ function load() {
   hls.attachMedia(el);
 
   // Birinchi kadr yuklandi -> qoplamani olib tashlaymiz.
-  hls.on(Hls.Events.FRAG_BUFFERED, () => (waiting.value = false));
+  hls.on(Hls.Events.FRAG_BUFFERED, () => {
+    waiting.value = false;
+    attempts = 0;
+  });
 
   hls.on(Hls.Events.ERROR, (_evt, data) => {
     if (!data.fatal || !hls) return;
@@ -81,18 +124,24 @@ function onVideoError() {
 
 function onPlaying() {
   waiting.value = false;
+  attempts = 0;
 }
 
-onMounted(load);
+onMounted(() => {
+  startBeat();
+  load();
+});
 watch(
-  () => props.src,
+  () => [props.src, props.cameraId],
   () => {
     waiting.value = true;
+    startBeat();
     load();
   }
 );
 onBeforeUnmount(() => {
   destroyed = true;
+  stopBeat();
   cleanup();
 });
 </script>
@@ -108,10 +157,11 @@ onBeforeUnmount(() => {
       class="player"
       @error="onVideoError"
       @playing="onPlaying"
+      @timeupdate="emit('time', ($event.target as HTMLVideoElement).currentTime)"
     />
     <div v-if="waiting" class="overlay">
       <span class="spinner" />
-      <span>Oqim kutilmoqda…</span>
+      <span>{{ watchError || "Oqim kutilmoqda…" }}</span>
     </div>
   </div>
 </template>

@@ -1,10 +1,27 @@
 <script setup lang="ts">
+definePageMeta({ permission: "cameras.manage" });
+
 const { list, remove } = useCameras();
 
 const cameras = ref<Camera[]>([]);
 const loading = ref(true);
 const error = ref("");
 const copiedId = ref<number | null>(null);
+const q = ref("");
+// Oqim faqat "Ko'rish" bosilganda ochiladi — 100+ kamera birdan tortilmasin.
+const playing = ref(new Set<number>());
+const toggle = (id: number) => {
+  const s = new Set(playing.value);
+  s.has(id) ? s.delete(id) : s.add(id);
+  playing.value = s;
+};
+const filtered = computed(() => {
+  const s = q.value.trim().toLowerCase();
+  if (!s) return cameras.value;
+  return cameras.value.filter(
+    (c) => c.name.toLowerCase().includes(s) || c.slug.includes(s) || String(c.channel ?? "") === s
+  );
+});
 
 async function reload() {
   loading.value = true;
@@ -55,7 +72,11 @@ onMounted(reload);
           {{ cameras.length }} ta kamera
         </p>
       </div>
-      <NuxtLink to="/add" class="btn btn-primary">+ Kamera qo'shish</NuxtLink>
+      <div class="head-tools">
+        <input v-model="q" class="input search" placeholder="Nom yoki kanal…" />
+        <NuxtLink to="/nvrs" class="btn">NVR'dan import</NuxtLink>
+        <NuxtLink to="/add" class="btn btn-primary">+ Kamera qo'shish</NuxtLink>
+      </div>
     </div>
 
     <p v-if="loading" class="muted">Yuklanmoqda…</p>
@@ -65,7 +86,7 @@ onMounted(reload);
     </p>
 
     <div v-else class="grid">
-      <article v-for="c in cameras" :key="c.id" class="card">
+      <article v-for="c in filtered" :key="c.id" class="card">
         <div class="card-head">
           <div class="title">
             <h3>{{ c.name }}</h3>
@@ -77,7 +98,17 @@ onMounted(reload);
               >
                 № {{ c.order }}
               </span>
-              <span class="slug mono">{{ c.slug }}</span>
+              <span v-if="c.nvr_id" class="badge badge-ok" :title="`${c.nvr_name} · kanal ${c.channel}`">
+                NVR · {{ c.channel }}
+              </span>
+              <span v-else class="slug mono">{{ c.slug }}</span>
+              <span
+                v-if="c.is_public === false"
+                class="badge badge-muted"
+                title="Mehmon sahifasida ko'rinmaydi"
+              >
+                Yopiq
+              </span>
               <span
                 class="badge"
                 :class="codecBadge(c).cls"
@@ -95,7 +126,8 @@ onMounted(reload);
 
         <ClientOnly>
           <!-- Ochilmasa pleyer o'zi har 5s da qayta urinadi (HlsPlayer) -->
-          <HlsPlayer :src="c.hls" />
+          <HlsPlayer v-if="playing.has(c.id)" :src="c.hls" :camera-id="c.id" />
+          <button v-else class="ph" @click="toggle(c.id)">▶ Ko'rish</button>
         </ClientOnly>
 
         <div class="url-row">
@@ -131,6 +163,29 @@ h1 {
 }
 .err {
   color: var(--danger);
+}
+.head-tools {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.search {
+  width: 200px;
+}
+.ph {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  background: #000;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+}
+.ph:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .grid {
   display: grid;

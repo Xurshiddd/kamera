@@ -11,7 +11,8 @@ const BASE = process.env.STREAM_BASE || "http://localhost:8888";
 // maxfiy ma'lumot ochmaydi.
 router.get("/public/cameras", (req, res) => {
   const rows = db
-    .prepare(`SELECT id, name, slug FROM cameras ORDER BY ${DISPLAY_ORDER}`)
+    .prepare(`SELECT id, name, slug FROM cameras WHERE is_public = 1
+       ORDER BY ${DISPLAY_ORDER}`)
     .all();
   res.json(
     rows.map((r) => ({ ...r, hls: `${BASE}/${r.slug}/index.m3u8` }))

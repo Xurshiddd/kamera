@@ -4,6 +4,8 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import db from "./db.js";
+import { liveUrl } from "./hikvision.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -41,7 +43,13 @@ export async function probeCodec(camera) {
 
 // RTSP manzilini login/parol bilan yasaymiz.
 // Diqqat: bu manzil faqat server ichida qoladi, tashqariga CHIQMAYDI.
+// NVR kamerasi bo'lsa (nvr_id) — manba NVR kanali (Streaming/Channels/{ch}01).
 export function buildRtspSource(c) {
+  if (c.nvr_id) {
+    const nvr = db.prepare("SELECT * FROM nvrs WHERE id = ?").get(c.nvr_id);
+    if (!nvr) throw new Error(`NVR #${c.nvr_id} topilmadi`);
+    return liveUrl(nvr, c.channel, c.stream || "main");
+  }
   return `rtsp://${encodeURIComponent(c.login)}:${encodeURIComponent(
     c.parol
   )}@${c.ip}:${c.port}/${c.rtsp_path}`;

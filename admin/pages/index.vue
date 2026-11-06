@@ -109,7 +109,7 @@ onBeforeUnmount(() => {
           class="tile"
         >
           <template v-if="c">
-            <HlsPlayer v-if="started.has(c.id)" :src="c.hls" />
+            <HlsPlayer v-if="started.has(c.id)" :src="c.hls" :camera-id="c.id" />
 
             <!-- Ko'rish bosilguncha — default belgi (placeholder) -->
             <div v-else class="ph">

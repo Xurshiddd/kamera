@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ permission: "cameras.manage" });
+
 const { add } = useCameras();
 const router = useRouter();
 

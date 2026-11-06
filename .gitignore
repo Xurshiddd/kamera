@@ -9,5 +9,6 @@ dist/
 *.db-*
 data/
 hls/
+hls-pb/
 *.tar.gz
 *.tgz

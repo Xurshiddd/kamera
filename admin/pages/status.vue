@@ -1,4 +1,6 @@
 <script setup lang="ts">
+definePageMeta({ permission: "status.view" });
+
 // Server holati: uptime, CPU yuki, RAM, disk va har kameraning jonli holati.
 // Har 5 sekundda avtomatik yangilanadi.
 const { call } = useApi();

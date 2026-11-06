@@ -8,7 +8,7 @@ import fs from "node:fs/promises";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import db from "../db.js";
-import { requireAuth } from "../auth.js";
+import { requirePerm } from "../auth.js";
 
 const execFileAsync = promisify(execFile);
 const API = process.env.MEDIAMTX_API || "http://127.0.0.1:9997";
@@ -42,7 +42,7 @@ async function memAvailable() {
   }
 }
 
-router.get("/status", requireAuth, async (req, res) => {
+router.get("/status", requirePerm("status.view"), async (req, res) => {
   const [disk, memFree, pathsRes] = await Promise.all([
     diskUsage(),
     memAvailable(),
@@ -55,7 +55,9 @@ router.get("/status", requireAuth, async (req, res) => {
   const paths = new Map((pathsRes?.items || []).map((p) => [p.name, p]));
 
   const cameras = db
-    .prepare("SELECT id, name, slug, codec FROM cameras ORDER BY name")
+    .prepare(
+      "SELECT id, name, slug, codec, nvr_id IS NOT NULL AS on_demand FROM cameras ORDER BY name"
+    )
     .all()
     .map((c) => {
       const p = paths.get(c.slug);

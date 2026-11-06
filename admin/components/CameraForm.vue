@@ -13,7 +13,24 @@ const rtspByBrand: Record<string, string> = {
   dahua: "cam/realmonitor?channel=1&subtype=0",
 };
 
+// Manba: NVR kanali yoki to'g'ridan IP kamera.
+interface NvrItem { id: number; name: string; ip: string }
+const nvrs = ref<NvrItem[]>([]);
+const { call } = useApi();
+onMounted(async () => {
+  try {
+    nvrs.value = await call<NvrItem[]>("/api/nvrs");
+    if (props.mode === "add" && nvrs.value.length && !form.nvrId) form.nvrId = nvrs.value[0].id;
+  } catch {
+    /* NVR ro'yxati bo'lmasa faqat IP rejimi */
+  }
+});
+
 const form = reactive({
+  source: (props.initial?.nvr_id || props.mode === "add" ? "nvr" : "ip") as "nvr" | "ip",
+  nvrId: (props.initial?.nvr_id ?? null) as number | null,
+  channel: (props.initial?.channel ?? null) as number | "" | null,
+  stream: (props.initial?.stream || "main") as "main" | "sub",
   name: props.initial?.name || "",
   ip: props.initial?.ip || "",
   port: props.initial?.port || 554,
@@ -22,6 +39,7 @@ const form = reactive({
   rtspPath: props.initial?.rtsp_path || "",
   // number input bo'shatilsa "" bo'ladi — submit'da null'ga aylantiramiz
   order: (props.initial?.order ?? null) as number | "" | null,
+  isPublic: props.initial?.is_public ?? true,
 });
 
 // Mavjud RTSP yo'li brend namunasiga mos kelsa — o'sha brend tanlangan turadi.
@@ -37,6 +55,24 @@ const localError = ref("");
 
 function submit() {
   localError.value = "";
+  const common = {
+    name: form.name,
+    order: form.order === "" || form.order === null ? null : Number(form.order),
+    isPublic: form.isPublic,
+  };
+  if (form.source === "nvr") {
+    if (!form.name || !form.nvrId || !form.channel) {
+      localError.value = "Nom, NVR va kanal raqami majburiy.";
+      return;
+    }
+    emit("submit", {
+      ...common,
+      nvrId: form.nvrId,
+      channel: Number(form.channel),
+      stream: form.stream,
+    });
+    return;
+  }
   const parolRequired = props.mode === "add";
   if (!form.name || !form.ip || !form.login || (parolRequired && !form.parol)) {
     localError.value = parolRequired
@@ -52,6 +88,7 @@ function submit() {
     parol: form.parol,
     rtspPath: brand.value === "custom" ? form.rtspPath : rtspByBrand[brand.value],
     order: form.order === "" || form.order === null ? null : Number(form.order),
+    isPublic: form.isPublic,
   });
 }
 </script>
@@ -66,6 +103,40 @@ function submit() {
       </p>
     </div>
 
+    <div v-if="mode === 'add'">
+      <label class="label">Manba</label>
+      <select v-model="form.source" class="input">
+        <option value="nvr">NVR kanali</option>
+        <option value="ip">To'g'ridan IP kamera</option>
+      </select>
+    </div>
+
+    <template v-if="form.source === 'nvr'">
+      <div class="row">
+        <div style="flex: 2">
+          <label class="label">NVR</label>
+          <select v-model.number="form.nvrId" class="input">
+            <option v-for="n in nvrs" :key="n.id" :value="n.id">{{ n.name }} ({{ n.ip }})</option>
+          </select>
+          <p v-if="!nvrs.length" class="hint">
+            Hali NVR yo'q — avval <NuxtLink to="/nvrs">NVR</NuxtLink> sahifasida qo'shing.
+          </p>
+        </div>
+        <div style="flex: 1">
+          <label class="label">Kanal</label>
+          <input v-model.number="form.channel" class="input" type="number" min="1" placeholder="1" />
+        </div>
+      </div>
+      <div>
+        <label class="label">Oqim</label>
+        <select v-model="form.stream" class="input">
+          <option value="main">Asosiy (yuqori sifat)</option>
+          <option value="sub">Qo'shimcha (past sifat, H.265 bo'lsa transkod qilinadi)</option>
+        </select>
+      </div>
+    </template>
+
+    <template v-else>
     <div class="row">
       <div style="flex: 2">
         <label class="label">Kamera IP</label>
@@ -107,6 +178,7 @@ function submit() {
       <input v-model="form.rtspPath" class="input mono" placeholder="Streaming/Channels/101" />
     </div>
     <p v-else class="hint mono">RTSP yo'li: {{ rtspByBrand[brand] }}</p>
+    </template>
 
     <div>
       <label class="label">Tartib raqami (ixtiyoriy)</label>
@@ -123,6 +195,16 @@ function submit() {
       </p>
     </div>
 
+    <div>
+      <label class="check">
+        <input v-model="form.isPublic" type="checkbox" />
+        <span>Mehmon sahifasida ochiq (loginsiz jonli ko'rinadi)</span>
+      </label>
+      <p class="hint">
+        Belgilanmasa kamera faqat login qilgan va ruxsati bor xodimlarga ko'rinadi.
+      </p>
+    </div>
+
     <p v-if="localError || error" class="err">{{ localError || error }}</p>
 
     <div class="actions">
@@ -134,7 +216,7 @@ function submit() {
         <template v-else>{{ mode === "add" ? "Qo'shish" : "Saqlash" }}</template>
       </button>
     </div>
-    <p v-if="saving" class="hint">
+    <p v-if="saving && form.source === 'ip'" class="hint">
       Kamera kodegi (H.264/H.265) tekshirilmoqda — bu 5–20 sekund olishi mumkin.
     </p>
   </div>

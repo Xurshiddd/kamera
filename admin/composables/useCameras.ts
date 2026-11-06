@@ -21,12 +21,18 @@ export function useCameras() {
 
 export interface NewCamera {
   name: string;
-  ip: string;
+  // To'g'ridan IP kamera uchun (NVR kamerasida kerak emas)
+  ip?: string;
   port?: number;
-  login: string;
-  parol: string; // edit'da bo'sh qoldirilsa serverda eskisi qoladi
+  login?: string;
+  parol?: string; // edit'da bo'sh qoldirilsa serverda eskisi qoladi
   rtspPath?: string;
   order?: number | null; // ko'rsatish tartibi; null = tartibsizlar keyin chiqadi
+  isPublic?: boolean; // mehmon (loginsiz) sahifada ko'rinadimi
+  // NVR kanali (berilsa ip/login/parol kerak emas)
+  nvrId?: number | null;
+  channel?: number | null;
+  stream?: "main" | "sub";
 }
 
 export type Codec = "h264" | "hevc" | null;
@@ -38,13 +44,18 @@ export interface Camera {
   ip?: string;
   codec?: Codec;
   order?: number | null;
+  is_public?: boolean;
+  nvr_id?: number | null;
+  nvr_name?: string | null;
+  channel?: number | null;
+  stream?: "main" | "sub";
   hls: string;
   created_at?: string;
 }
 
 // Tahrirlash formasi uchun to'liq yozuv (parol QAYTARILMAYDI).
 export interface CameraDetail extends Camera {
-  port: number;
-  login: string;
-  rtsp_path: string;
+  port: number | null;
+  login: string | null;
+  rtsp_path: string | null;
 }
