@@ -91,7 +91,7 @@ const liveCount = computed(
 
 <template>
   <section>
-    <div class="head">
+    <div class="page-head">
       <div>
         <h1>Server holati</h1>
         <p class="sub">Har 5 sekundda yangilanadi</p>
@@ -195,24 +195,6 @@ const liveCount = computed(
 </template>
 
 <style scoped>
-.head {
-  margin-bottom: 18px;
-}
-h1 {
-  margin: 0;
-  font-size: 22px;
-}
-.sub {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-.muted {
-  color: var(--muted);
-}
-.err {
-  color: var(--danger);
-}
 
 .stats {
   display: grid;
@@ -227,7 +209,7 @@ h1 {
   padding: 14px 16px;
 }
 .stat-label {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--muted);
   margin-bottom: 6px;
 }
@@ -238,7 +220,7 @@ h1 {
 }
 .stat-foot {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 15px;
   color: var(--muted);
 }
 .bar {
@@ -286,7 +268,7 @@ h1 {
 table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 15px;
 }
 th,
 td {
@@ -297,7 +279,7 @@ td {
 }
 th {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 500;
 }
 tr:last-child td {
@@ -307,17 +289,14 @@ tr:last-child td {
   font-weight: 550;
 }
 .cam-slug {
-  font-size: 11px;
+  font-size: 15px;
   color: var(--muted);
-}
-.mono {
-  font-family: ui-monospace, monospace;
 }
 .live {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 15px;
 }
 .live i {
   width: 8px;

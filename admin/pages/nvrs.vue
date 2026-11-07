@@ -340,12 +340,6 @@ onMounted(reload);
 </template>
 
 <style scoped>
-.mono {
-  font-family: ui-monospace, monospace;
-}
-.small {
-  font-size: 12px;
-}
 .nvr-list {
   display: grid;
   gap: 12px;

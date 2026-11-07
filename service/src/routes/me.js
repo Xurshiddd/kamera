@@ -1,6 +1,6 @@
 import { Router } from "express";
 import db from "../db.js";
-import { requireAuth } from "../auth.js";
+import { requireAuth, revokeTokens, issueToken } from "../auth.js";
 import { allowedCameraIds, hashPassword, verifyPassword, audit } from "../rbac.js";
 import { DISPLAY_ORDER } from "./cameras.js";
 
@@ -58,8 +58,11 @@ router.post("/me/password", requireAuth, (req, res) => {
     hashPassword(next),
     req.user.id
   );
+  // Boshqa qurilmalardagi (yoki o'g'irlangan) eski tokenlar bekor qilinadi;
+  // shu brauzer yangi token bilan davom etadi.
+  revokeTokens(req.user.id);
   audit(req, "me.password");
-  res.json({ ok: true });
+  res.json({ ok: true, token: issueToken(req.user.id) });
 });
 
 export default router;

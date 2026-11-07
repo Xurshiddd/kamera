@@ -32,10 +32,6 @@ async function stopPath(slug) {
 
 export const isOnDemand = (camera) => Boolean(camera.nvr_id);
 
-export function activeCount() {
-  return active.size;
-}
-
 // Kamerani ko'rish boshlandi / davom etmoqda. Birinchi chaqiruvda MediaMTX
 // yo'lini yaratadi (ffmpeg NVR'dan tortishni boshlaydi).
 export async function watch(camera) {

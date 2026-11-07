@@ -7,14 +7,14 @@ import Hls from "hls.js";
 // vod=true — yozuv (playback) rejimi: boshidan o'ynaydi, jonli chetga sakramaydi
 // va joriy vaqtni "time" hodisasi bilan bildiradi.
 const props = defineProps<{ src: string; cameraId?: number; vod?: boolean }>();
-const emit = defineEmits<{ (e: "time", seconds: number): void }>();
+const emit = defineEmits<{ (e: "time", seconds: number): void; (e: "playing", on: boolean): void }>();
 const watchError = ref("");
+const { token } = useAuth(); // setup paytida olinadi (callback'larda ham ishlatiladi)
 let beatTimer: ReturnType<typeof setInterval> | null = null;
 
 async function heartbeat() {
   if (!props.cameraId || destroyed) return;
   const base = useRuntimeConfig().public.serviceBase as string;
-  const { token } = useAuth();
   try {
     await $fetch(`${base}/api/live/${props.cameraId}/watch`, {
       method: "POST",
@@ -38,6 +38,8 @@ function stopBeat() {
 }
 const video = ref<HTMLVideoElement | null>(null);
 const waiting = ref(true); // oqim hali ochilmagan -> "ulanmoqda" qoplamasi
+// Ota sahifa "JONLI" belgisini faqat tasvir kelayotganda ko'rsatishi uchun.
+watch(waiting, (w) => emit("playing", !w));
 let hls: Hls | null = null;
 let retryTimer: ReturnType<typeof setTimeout> | null = null;
 let destroyed = false;
@@ -74,13 +76,17 @@ function load() {
   if (!el || !props.src || destroyed) return;
   cleanup();
 
-  // Safari/iOS HLS'ni o'zi tushunadi; xato bo'lsa @error orqali qayta uriniladi.
-  if (el.canPlayType("application/vnd.apple.mpegurl")) {
-    el.src = props.src;
-    el.play().catch(() => {});
+  // hls.js — imkon bo'lsa DOIM (yangi Chrome ham HLS'ni o'zi o'ynaydi, lekin
+  // o'shanda yopiq kameralar uchun token sarlavhasini yuborib bo'lmaydi).
+  // Brauzerning o'z pleyeri faqat zaxira (eski iOS Safari) — u faqat ochiq
+  // kameralarni ko'rsata oladi; xato bo'lsa @error orqali qayta uriniladi.
+  if (!Hls.isSupported()) {
+    if (el.canPlayType("application/vnd.apple.mpegurl")) {
+      el.src = props.src;
+      el.play().catch(() => {});
+    }
     return;
   }
-  if (!Hls.isSupported()) return;
 
   // MediaMTX'ning LL-HLS chiqishi hls.js'ning low-latency rejimida ishonchsiz,
   // shuning uchun oddiy (barqaror) HLS rejimi. Efirdan ~3 segment orqada turib
@@ -95,6 +101,13 @@ function load() {
     fragLoadingMaxRetry: 6,
     manifestLoadingMaxRetry: 2, // uzoq kutmaymiz — baribir 5s'lik tsikl bor
     levelLoadingMaxRetry: 4,
+    // Yopiq kameralar oqimi token bilan beriladi (gateway auth_request).
+    // Token faqat shu saytning o'z manziliga yuboriladi — begona domenga emas.
+    xhrSetup: (xhr: XMLHttpRequest, url: string) => {
+      if (token.value && new URL(url, location.href).origin === location.origin) {
+        xhr.setRequestHeader("Authorization", `Bearer ${token.value}`);
+      }
+    },
   });
   hls.loadSource(props.src);
   hls.attachMedia(el);
@@ -189,7 +202,7 @@ onBeforeUnmount(() => {
   gap: 10px;
   background: rgba(8, 10, 14, 0.72);
   color: var(--muted);
-  font-size: 13px;
+  font-size: 15px;
   pointer-events: none;
 }
 .spinner {

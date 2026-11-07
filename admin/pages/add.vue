@@ -23,10 +23,14 @@ async function submit(payload: NewCamera) {
 
 <template>
   <section class="wrap">
-    <h1>Yangi kamera</h1>
-    <p class="muted">
+    <div class="page-head">
+      <div>
+        <h1>Yangi kamera</h1>
+        <p class="sub">
       Login va parol faqat serverda saqlanadi — tashqi URL'da ko'rinmaydi.
-    </p>
+        </p>
+      </div>
+    </div>
     <CameraForm mode="add" :saving="saving" :error="error" @submit="submit" />
   </section>
 </template>
@@ -34,13 +38,5 @@ async function submit(payload: NewCamera) {
 <style scoped>
 .wrap {
   max-width: 560px;
-}
-h1 {
-  margin: 0 0 4px;
-  font-size: 22px;
-}
-.muted {
-  color: var(--muted);
-  margin: 0 0 20px;
 }
 </style>

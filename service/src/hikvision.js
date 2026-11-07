@@ -38,7 +38,7 @@ function digestHeader(nvr, method, uri, ch) {
 }
 
 // ISAPI so'rovi: avval auth'siz, 401 kelsa digest bilan qaytariladi.
-export async function isapi(nvr, path, { method = "GET", body, timeout = 15000 } = {}) {
+async function isapi(nvr, path, { method = "GET", body, timeout = 15000, raw = false } = {}) {
   const url = `http://${nvr.ip}:${nvr.http_port || 80}${path}`;
   const headers = body ? { "Content-Type": "application/xml" } : {};
   const opts = () => ({ method, body, headers: { ...headers }, signal: AbortSignal.timeout(timeout) });
@@ -52,10 +52,16 @@ export async function isapi(nvr, path, { method = "GET", body, timeout = 15000 }
     o.headers.Authorization = digestHeader(nvr, method, path, parseChallenge(www));
     res = await fetch(url, o);
   }
-  const text = await res.text();
   if (res.status === 401) throw new Error("NVR login yoki parol noto'g'ri");
-  if (!res.ok) throw new Error(`NVR HTTP ${res.status}`);
-  return text;
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    const sub = tag(t, "subStatusCode") || tag(t, "statusString");
+    const err = new Error(`NVR HTTP ${res.status}${sub ? ` (${sub})` : ""}`);
+    err.status = res.status;
+    err.sub = sub;
+    throw err;
+  }
+  return raw ? Buffer.from(await res.arrayBuffer()) : res.text();
 }
 
 // --- Kichik XML yordamchilar (ISAPI javoblari oddiy, kutubxona shart emas) ---
@@ -96,7 +102,7 @@ export async function listChannels(nvr) {
 }
 
 // Kanal/oqim -> RTSP "trackID": 1-kanal asosiy oqim = 101, qo'shimcha = 102.
-export const trackId = (channel, stream = "main") => `${channel}0${stream === "sub" ? 2 : 1}`;
+const trackId = (channel, stream = "main") => `${channel}0${stream === "sub" ? 2 : 1}`;
 
 // "YYYY-MM-DDTHH:MM:SS" (mahalliy) -> ISAPI "…Z" va qaytarish.
 const toNvr = (local) => `${local}Z`;
@@ -207,4 +213,107 @@ export function playbackUrl(nvr, channel, start, end) {
   let u = `${rtspBase(nvr)}/Streaming/tracks/${trackId(channel)}?starttime=${f(start)}`;
   if (end) u += `&endtime=${f(end)}`;
   return u;
+}
+
+// =============================================================================
+//  Kamera oqimi sozlamalari (NVR orqali, StreamingProxy).
+//  NVR IP kameraga o'zi yozadi. Kodek/Smart o'zgarsa kamera qayta ishga
+//  tushadi: ~40–90 s tasvir va yozuv yo'q, shu vaqt ichida NVR 403 qaytaradi.
+//  Kalit kadr oralig'i (GOP) bu API'da yo'q — uni kamera sahifasida sozlash kerak.
+// =============================================================================
+
+const streamPath = (channel, stream = "main") =>
+  `/ISAPI/ContentMgmt/StreamingProxy/channels/${trackId(channel, stream)}`;
+
+function parseStream(xml) {
+  const smart = xml.match(/<SmartCodec>\s*<enabled>(\w+)<\/enabled>/);
+  const rc = tag(xml, "videoQualityControlType");
+  return {
+    id: Number(tag(xml, "id")),
+    codec: tag(xml, "videoCodecType"), // "H.264" | "H.265"
+    width: Number(tag(xml, "videoResolutionWidth")) || 0,
+    height: Number(tag(xml, "videoResolutionHeight")) || 0,
+    rc, // "VBR" | "CBR"
+    bitrate: Number(rc === "CBR" ? tag(xml, "constantBitRate") : tag(xml, "vbrUpperCap")) || 0, // kbit/s
+    quality: Number(tag(xml, "fixedQuality")) || null,
+    fps: Number(tag(xml, "maxFrameRate")) || 0, // 2500 = 25 kadr/s; 0 = to'liq
+    smart: smart ? smart[1] === "true" : null, // null = kamera qo'llamaydi
+  };
+}
+
+// Barcha kanallarning ASOSIY oqimi (bitta so'rov). Map<channel, stream>
+export async function listStreams(nvr) {
+  const x = await isapi(nvr, "/ISAPI/ContentMgmt/StreamingProxy/channels", { timeout: 60000 });
+  const out = new Map();
+  for (const b of blocks(x, "StreamingChannel")) {
+    const s = parseStream(b);
+    if (s.id % 100 === 1) out.set(Math.floor(s.id / 100), s);
+  }
+  return out;
+}
+
+const opts = (xml, name) => {
+  const m = xml.match(new RegExp(`<${name}[^>]*\\sopt="([^"]*)"`));
+  return m ? m[1].split(",").map((v) => v.trim()).filter(Boolean) : [];
+};
+const range = (xml, name) => {
+  const m = xml.match(new RegExp(`<${name}[^>]*\\smin="(\\d+)"[^>]*\\smax="(\\d+)"`));
+  return m ? { min: Number(m[1]), max: Number(m[2]) } : null;
+};
+
+// Bitta kanal: joriy sozlama + kamera qo'llaydigan qiymatlar.
+export async function getStream(nvr, channel) {
+  const [x, c] = await Promise.all([
+    isapi(nvr, streamPath(channel)),
+    isapi(nvr, `${streamPath(channel)}/capabilities`).catch(() => ""),
+  ]);
+  const w = opts(c, "videoResolutionWidth").map(Number);
+  const h = opts(c, "videoResolutionHeight").map(Number);
+  return {
+    current: parseStream(x),
+    caps: {
+      codecs: opts(c, "videoCodecType"),
+      // Kenglik va balandlik ro'yxatlari juft-juft keladi (1280↔720, 1920↔1080).
+      resolutions: w.length === h.length ? w.map((v, i) => ({ width: v, height: h[i] })) : [],
+      rc: opts(c, "videoQualityControlType"),
+      fps: opts(c, "maxFrameRate").map(Number),
+      bitrate: range(c, "vbrUpperCap") || range(c, "constantBitRate"),
+    },
+  };
+}
+
+// O'zgartirish: joriy XML olinadi, faqat berilgan maydonlar almashtiriladi
+// (NVR qolgan maydonlarni o'zgarmagan holda qabul qiladi).
+// changes: { codec, width, height, rc, bitrate, fps, smart }
+export async function setStream(nvr, channel, changes) {
+  let x = await isapi(nvr, streamPath(channel));
+  const set = (name, v) => {
+    if (v === undefined || v === null) return;
+    const re = new RegExp(`(<${name}>)[^<]*(</${name}>)`);
+    if (re.test(x)) x = x.replace(re, `$1${v}$2`);
+    else if (name === "constantBitRate" || name === "vbrUpperCap") {
+      x = x.replace("</videoQualityControlType>", `</videoQualityControlType><${name}>${v}</${name}>`);
+    }
+  };
+  set("videoCodecType", changes.codec);
+  set("videoResolutionWidth", changes.width);
+  set("videoResolutionHeight", changes.height);
+  set("videoQualityControlType", changes.rc);
+  if (changes.bitrate) {
+    const rc = changes.rc || tag(x, "videoQualityControlType");
+    set(rc === "CBR" ? "constantBitRate" : "vbrUpperCap", changes.bitrate);
+  }
+  set("maxFrameRate", changes.fps);
+  if (typeof changes.smart === "boolean") {
+    x = x.replace(/(<SmartCodec>\s*<enabled>)\w+(<\/enabled>)/, `$1${changes.smart}$2`);
+  }
+  const r = await isapi(nvr, streamPath(channel), { method: "PUT", body: x, timeout: 30000 });
+  const status = tag(r, "statusString");
+  if (status && status !== "OK") throw new Error(`NVR: ${status} ${tag(r, "subStatusCode") || ""}`.trim());
+  return parseStream(x);
+}
+
+// Kameradan joriy kadr (JPEG).
+export function snapshot(nvr, channel) {
+  return isapi(nvr, `${streamPath(channel)}/picture`, { raw: true, timeout: 15000 });
 }

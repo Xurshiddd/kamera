@@ -182,7 +182,4 @@ onMounted(reload);
 .tag {
   margin: 0 4px 4px 0;
 }
-.small {
-  font-size: 12px;
-}
 </style>

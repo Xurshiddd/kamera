@@ -1,6 +1,6 @@
 import { Router } from "express";
 import db from "../db.js";
-import { requirePerm } from "../auth.js";
+import { requirePerm, revokeTokens } from "../auth.js";
 import { hashPassword, audit, SUPERADMIN } from "../rbac.js";
 
 const router = Router();
@@ -70,6 +70,16 @@ function setLinks(userId, roleIds, groupIds) {
 
 const ids = (v) => (Array.isArray(v) ? v.map(Number).filter(Number.isInteger) : undefined);
 
+// Huquqni oshirishdan himoya: superadmin bo'lmagan xodim faqat O'ZIDA BOR
+// ruxsatlardan iborat rollarni bera oladi (aks holda users.manage'li xodim
+// o'ziga yoki sherigiga kattaroq rol berib qo'yishi mumkin edi).
+const isSaCaller = (req) => req.user.id === null || req.user.roles.includes(SUPERADMIN);
+function rolesBeyondCaller(req, roleIds) {
+  if (isSaCaller(req) || !roleIds?.length) return false;
+  const q = db.prepare("SELECT perm_code FROM role_permissions WHERE role_id = ?");
+  return roleIds.some((r) => q.all(r).some((p) => !req.user.perms.has(p.perm_code)));
+}
+
 router.get("/", (req, res) => res.json(listUsers()));
 
 router.post("/", (req, res) => {
@@ -82,8 +92,11 @@ router.post("/", (req, res) => {
   if (typeof password !== "string" || password.length < 8) {
     return res.status(400).json({ error: "Parol kamida 8 belgi" });
   }
-  if (touchesSuperadmin(roleIds) && !req.user.roles.includes(SUPERADMIN) && req.user.id !== null) {
+  if (touchesSuperadmin(roleIds) && !isSaCaller(req)) {
     return res.status(403).json({ error: "Superadmin rolini faqat superadmin beradi" });
+  }
+  if (rolesBeyondCaller(req, roleIds)) {
+    return res.status(403).json({ error: "Oʻzingizda yoʻq huquqli rolni bera olmaysiz" });
   }
   if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) {
     return res.status(409).json({ error: "Bu login band" });
@@ -111,11 +124,17 @@ router.put("/:id(\\d+)", (req, res) => {
   const body = req.body || {};
   const roleIds = ids(body.role_ids);
   const groupIds = ids(body.group_ids);
-  const callerIsSa = req.user.id === null || req.user.roles.includes(SUPERADMIN);
+  const callerIsSa = isSaCaller(req);
   const targetIsSa = isSuperadmin(id);
 
   if (!callerIsSa && (targetIsSa || (roleIds && touchesSuperadmin(roleIds)))) {
     return res.status(403).json({ error: "Superadminni faqat superadmin o'zgartiradi" });
+  }
+  if (!callerIsSa && roleIds && id === req.user.id) {
+    return res.status(403).json({ error: "Oʻz rollaringizni oʻzgartira olmaysiz" });
+  }
+  if (rolesBeyondCaller(req, roleIds)) {
+    return res.status(403).json({ error: "Oʻzingizda yoʻq huquqli rolni bera olmaysiz" });
   }
   if (body.password !== undefined && body.password !== "" &&
       (typeof body.password !== "string" || body.password.length < 8)) {
@@ -135,6 +154,8 @@ router.put("/:id(\\d+)", (req, res) => {
           hashPassword(body.password),
           id
         );
+        // Admin parolni tiklasa — xodimning barcha ochiq sessiyalari yopiladi.
+        revokeTokens(id);
       }
       setLinks(id, roleIds, groupIds);
       if (activeSuperadmins() === 0) throw new Error("LAST_SA");

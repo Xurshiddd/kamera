@@ -151,7 +151,8 @@ function genPassword() {
   form.password = Array.from(buf, (n) => abc[n % abc.length]).join("");
 }
 
-const fmt = (s: string | null) => (s ? s.replace("T", " ").slice(0, 16) : "—");
+// Server vaqti UTC -> mahalliy "KK.OO.YYYY SS:DD".
+const fmt = (s: string | null) => fmtUtc(s, false);
 
 onMounted(reload);
 </script>
@@ -288,12 +289,6 @@ onMounted(reload);
 .pw {
   display: flex;
   gap: 8px;
-}
-.mono {
-  font-family: ui-monospace, monospace;
-}
-.small {
-  font-size: 12px;
 }
 .tag {
   margin: 0 4px 4px 0;

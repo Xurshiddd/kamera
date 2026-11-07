@@ -19,7 +19,8 @@
 services:
   mediamtx:
     # -ffmpeg variant: ichida ffmpeg + libx264 bor (H265 -> H264 transkod uchun).
-    image: bluenviron/mediamtx:latest-ffmpeg
+    # Versiya qotirilgan: "latest" kutilmaganda yangilanib tizimni buzmasin.
+    image: bluenviron/mediamtx:1.20.0-ffmpeg
     volumes:
       - ./mediamtx.yml:/mediamtx.yml
       - ./hls:/hls # HLS segmentlari diskka -> gateway statik beradi

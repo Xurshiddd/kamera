@@ -235,18 +235,6 @@ function submit() {
   display: flex;
   gap: 12px;
 }
-.hint {
-  color: var(--muted);
-  font-size: 12px;
-  margin: 6px 0 0;
-}
-.mono {
-  font-family: ui-monospace, monospace;
-}
-.err {
-  color: var(--danger);
-  margin: 0;
-}
 .actions {
   display: flex;
   justify-content: flex-end;

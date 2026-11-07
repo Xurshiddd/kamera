@@ -15,10 +15,12 @@ async function submit() {
   if (next.value !== next2.value) return (error.value = "Yangi parollar mos emas.");
   saving.value = true;
   try {
-    await call("/api/me/password", {
+    const r = await call<{ token?: string }>("/api/me/password", {
       method: "POST",
       body: { current: current.value, next: next.value },
     });
+    // Eski tokenlar bekor bo'ldi — shu brauzer yangi token bilan davom etadi.
+    if (r.token) useAuth().set(r.token);
     done.value = true;
     current.value = next.value = next2.value = "";
   } catch (e: any) {
@@ -66,7 +68,4 @@ async function submit() {
 </template>
 
 <style scoped>
-.mono {
-  font-family: ui-monospace, monospace;
-}
 </style>

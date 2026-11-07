@@ -29,6 +29,13 @@ router.get("/roles", requirePerm("roles.manage", "users.manage"), (req, res) =>
   res.json(listRoles())
 );
 
+// Superadmin bo'lmagan xodim rolga faqat O'ZIDA BOR ruxsatlarni qo'sha oladi.
+function permsBeyondCaller(req, perms) {
+  if (req.user.id === null || req.user.roles.includes(SUPERADMIN) || !Array.isArray(perms)) return false;
+  return perms.some((p) => !req.user.perms.has(p));
+}
+const BEYOND = { error: "Oʻzingizda yoʻq ruxsatni rolga qoʻsha olmaysiz" };
+
 function setPerms(roleId, perms) {
   db.prepare("DELETE FROM role_permissions WHERE role_id = ?").run(roleId);
   const valid = new Set(db.prepare("SELECT code FROM permissions").all().map((p) => p.code));
@@ -41,6 +48,7 @@ router.post("/roles", requirePerm("roles.manage"), (req, res) => {
   if (typeof name !== "string" || !name.trim() || name.length > 64) {
     return res.status(400).json({ error: "Rol nomi kerak" });
   }
+  if (permsBeyondCaller(req, permissions)) return res.status(403).json(BEYOND);
   if (db.prepare("SELECT 1 FROM roles WHERE name = ?").get(name.trim())) {
     return res.status(409).json({ error: "Bu nomli rol bor" });
   }
@@ -63,6 +71,7 @@ router.put("/roles/:id(\\d+)", requirePerm("roles.manage"), (req, res) => {
     return res.status(400).json({ error: "superadmin roli o'zgartirilmaydi" });
   }
   const { name, description, permissions } = req.body || {};
+  if (permsBeyondCaller(req, permissions)) return res.status(403).json(BEYOND);
   const newName = row.system ? row.name : (name || row.name).trim(); // tizim rolini qayta nomlash yo'q
   db.transaction(() => {
     db.prepare("UPDATE roles SET name = ?, description = ? WHERE id = ?").run(

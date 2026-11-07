@@ -12,7 +12,7 @@
 //    bilan qirqiladi -> MP4. Fon ishi (job), progress bilan.
 // =============================================================================
 
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
@@ -27,7 +27,7 @@ fs.mkdirSync(EXPORT_DIR, { recursive: true });
 const IDLE_MS = 60 * 1000;
 const MAX_SESSIONS = Number(process.env.PLAYBACK_MAX_SESSIONS || 8);
 const MAX_SESSIONS_PER_USER = 4;
-export const EXPORT_MAX_MINUTES = Number(process.env.EXPORT_MAX_MINUTES || 24 * 60);
+const EXPORT_MAX_MINUTES = Number(process.env.EXPORT_MAX_MINUTES || 24 * 60);
 const EXPORT_TTL_MS = Number(process.env.EXPORT_TTL_MINUTES || 120) * 60 * 1000;
 const EXPORT_PARALLEL = 2;
 // Yozuvlarda kalit kadr (I-frame) oralig'i katta (bu NVR'da ~12s). Transkodsiz
@@ -41,8 +41,8 @@ const PLAYBACK_MODE = process.env.PLAYBACK_MODE === "copy" ? "copy" : "transcode
 
 // --- Vaqt yordamchilari ---
 export const TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/;
-export const toSec = (s) => Date.parse(`${s}Z`) / 1000;
-export const fromSec = (n) => new Date(n * 1000).toISOString().slice(0, 19);
+const toSec = (s) => Date.parse(`${s}Z`) / 1000;
+const fromSec = (n) => new Date(n * 1000).toISOString().slice(0, 19);
 
 export function nvrOf(camera) {
   const nvr = camera.nvr_id && db.prepare("SELECT * FROM nvrs WHERE id = ?").get(camera.nvr_id);
@@ -353,8 +353,16 @@ async function runExport(job) {
 
     // 2) Bo'laklarni indeksli MKV ga (aniq izlash uchun TS yaramaydi).
     const joined = path.join(tmp, "joined.mkv");
-    await runFfmpeg(["-i", `concat:${parts.join("|")}`, "-c", "copy", "-y", joined], { job });
+    // Bo'lakda video birinchi kalit kadrdan (ovozdan bir necha soniya keyin,
+    // Smart kodekda 12+ s) boshlanadi. ffmpeg odatda faqat 5 s ni tahlil qiladi —
+    // video parametrlarini topolmay, videoni tashlab yuborardi (faqat ovozli MP4).
+    await runFfmpeg(
+      ["-analyzeduration", "100M", "-probesize", "500M", "-i", `concat:${parts.join("|")}`, "-c", "copy", "-y", joined],
+      { job }
+    );
     job.progress = 0.95;
+    const src = probeVideo(joined);
+    if (!src) throw new Error("Videoni tayyorlab boʻlmadi (tasvir topilmadi). Qaytadan urinib koʻring.");
 
     // 3) Aniq boshlanish: kalit kadrdan o'qiydi, lekin MP4 edit-list bilan
     //    ko'rsatish aynan so'ralgan soniyadan boshlanadi. Qayta kodlash yo'q.
@@ -362,12 +370,33 @@ async function runExport(job) {
       [
         ...(preroll ? ["-ss", String(preroll)] : []),
         "-i", joined, "-t", String(total),
-        "-c", "copy", "-movflags", "+faststart", "-y", job.file,
+        "-c", "copy",
+        // H.265 bo'lsa: Apple/Chrome/Windows pleyerlari "hvc1" belgisini kutadi
+        // (ffmpeg sukut bo'yicha "hev1" yozadi -> qora ekran).
+        ...(src.codec === "hevc" ? ["-tag:v", "hvc1"] : []),
+        "-movflags", "+faststart", "-y", job.file,
       ],
       { job }
     );
+    // Faqat ovozli fayl hech qachon foydalanuvchiga berilmasin.
+    if (!probeVideo(job.file)) throw new Error("Videoni tayyorlab boʻlmadi (tasvir topilmadi). Qaytadan urinib koʻring.");
   } finally {
     fs.rm(tmp, { recursive: true, force: true }, () => {});
+  }
+}
+
+// Faylda haqiqiy video bormi: { codec, width, height } yoki null.
+function probeVideo(file) {
+  try {
+    const out = execFileSync(
+      "ffprobe",
+      ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=codec_name,width,height", "-of", "csv=p=0", file],
+      { timeout: 30000 }
+    ).toString();
+    const [codec, w, h] = out.trim().split(",");
+    return Number(w) > 0 && Number(h) > 0 ? { codec, width: Number(w), height: Number(h) } : null;
+  } catch {
+    return null;
   }
 }
 

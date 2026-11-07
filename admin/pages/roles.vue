@@ -164,12 +164,6 @@ onMounted(reload);
 </template>
 
 <style scoped>
-.mono {
-  font-family: ui-monospace, monospace;
-}
-.small {
-  font-size: 12px;
-}
 .perm-groups {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
@@ -185,7 +179,7 @@ onMounted(reload);
 }
 .pg legend {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 15px;
   padding: 0 4px;
 }
 .cards {
@@ -210,7 +204,7 @@ onMounted(reload);
 .plist {
   margin: 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: 15px;
   display: grid;
   gap: 3px;
 }

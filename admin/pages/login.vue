@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const username = ref("");
 const password = ref("");
+const showPw = ref(false);
 const error = ref("");
 const loading = ref(false);
 const router = useRouter();
@@ -16,18 +17,16 @@ async function submit() {
   }
   loading.value = true;
   try {
-    // Parolni to'g'ridan service'ga yuboramiz, token olamiz va saqlaymiz.
     const { token } = await call<{ token: string }>("/api/login", {
       method: "POST",
       body: { username: username.value.trim(), password: password.value },
     });
     set(token);
     await loadMe(true);
-    // Kirilgandan keyin kelingan sahifaga yoki ruxsatga mos "uy" sahifaga.
     const back = (route.query.redirect as string) || homePath();
     await router.push(back);
   } catch (e: any) {
-    error.value = e?.data?.error || "Login yoki parol noto'g'ri.";
+    error.value = e?.data?.error || "Login yoki parol notoʻgʻri. Qaytadan kiriting.";
   } finally {
     loading.value = false;
   }
@@ -35,83 +34,142 @@ async function submit() {
 </script>
 
 <template>
-  <section class="login-wrap">
+  <section class="wrap">
+    <div class="intro">
+      <h1>Xush kelibsiz</h1>
+      <p class="lead">
+        Bu yerda auditoriyalarni jonli kuzatasiz, oʻtgan kunlar yozuvlarini koʻrasiz va kerakli qismini
+        yuklab olasiz.
+      </p>
+      <ol class="steps">
+        <li><span class="num">1</span>Login va parolingizni kiriting</li>
+        <li><span class="num">2</span>«Jonli kuzatuv» yoki «Yozuvlar» boʻlimini tanlang</li>
+        <li><span class="num">3</span>Xonani bosing — tasvir katta ochiladi</li>
+      </ol>
+    </div>
+
     <form class="card" @submit.prevent="submit">
-      <div class="logo">
-        <span class="dot" />
-        Kamera boshqaruvi
-      </div>
-      <p class="muted">Davom etish uchun login va parolni kiriting.</p>
-
+      <h2>Tizimga kirish</h2>
       <div>
-        <label class="label">Login</label>
-        <input
-          v-model="username"
-          class="input"
-          autocomplete="username"
-          placeholder="login"
-          autofocus
-        />
+        <label class="label" for="login">Login</label>
+        <input id="login" v-model="username" class="input big" autocomplete="username" autofocus />
       </div>
-
       <div>
-        <label class="label">Parol</label>
-        <input
-          v-model="password"
-          class="input"
-          type="password"
-          autocomplete="current-password"
-          placeholder="••••••••"
-        />
+        <label class="label" for="parol">Parol</label>
+        <div class="pw">
+          <input
+            id="parol"
+            v-model="password"
+            class="input big"
+            :type="showPw ? 'text' : 'password'"
+            autocomplete="current-password"
+          />
+          <button type="button" class="btn btn-soft" @click="showPw = !showPw">
+            {{ showPw ? "Yashirish" : "Koʻrsatish" }}
+          </button>
+        </div>
       </div>
 
-      <p v-if="error" class="err">{{ error }}</p>
+      <p v-if="error" class="err" role="alert">{{ error }}</p>
 
-      <button class="btn btn-primary" :disabled="loading" type="submit">
+      <button class="btn btn-primary submit" :disabled="loading" type="submit">
         {{ loading ? "Tekshirilmoqda…" : "Kirish" }}
       </button>
+      <p class="help">Parolni unutdingizmi? Tizim administratoriga murojaat qiling.</p>
     </form>
   </section>
 </template>
 
 <style scoped>
-.login-wrap {
-  min-height: 70vh;
+.wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 48px;
+  align-items: flex-start;
+  padding: 24px 0;
+}
+.intro {
+  flex: 1 1 420px;
+  display: grid;
+  gap: 24px;
+}
+h1 {
+  margin: 0;
+  font-size: 44px;
+  line-height: 1.15;
+}
+.lead {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.55;
+  color: #374151;
+  max-width: 560px;
+}
+.steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 16px;
+  font-size: 20px;
+}
+.steps li {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.num {
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: var(--accent-dark);
+  font-size: 22px;
+  font-weight: 700;
   display: grid;
   place-items: center;
 }
 .card {
-  width: 100%;
-  max-width: 360px;
+  flex: 1 1 440px;
+  max-width: 520px;
   display: grid;
-  gap: 16px;
+  gap: 22px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 24px;
+  border-radius: 16px;
+  padding: 36px;
+  box-shadow: 0 4px 16px rgba(17, 24, 39, 0.06);
 }
-.logo {
+h2 {
+  margin: 0;
+  font-size: 32px;
+}
+.label {
+  font-size: 20px;
+}
+.big {
+  min-height: 60px;
+  font-size: 21px;
+}
+.pw {
   display: flex;
-  align-items: center;
   gap: 10px;
-  font-weight: 650;
-  font-size: 17px;
 }
-.dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--ok);
-  box-shadow: 0 0 0 3px rgba(63, 185, 80, 0.18);
+.pw .input {
+  flex: 1;
+  min-width: 0;
 }
-.muted {
+.pw .btn {
+  min-height: 60px;
+}
+.submit {
+  min-height: 64px;
+  font-size: 22px;
+}
+.help {
+  margin: 0;
+  font-size: 18px;
   color: var(--muted);
-  margin: 0;
-  font-size: 14px;
-}
-.err {
-  color: var(--danger);
-  margin: 0;
-  font-size: 14px;
 }
 </style>

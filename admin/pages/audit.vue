@@ -46,7 +46,7 @@ const total = ref(0);
 const pages = ref(1);
 const page = ref(Number(route.query.page) || 1);
 const limit = ref(Number(route.query.limit) || 50);
-const f = reactive({ user: "", action: "", from: "", to: "" });
+const f = reactive({ user: "", action: "", fromDate: "", fromTime: "", toDate: "", toTime: "" });
 
 async function load(p = page.value) {
   loading.value = true;
@@ -55,8 +55,8 @@ async function load(p = page.value) {
     const query: Record<string, any> = { page: p, limit: limit.value };
     if (f.user) query.user = f.user.trim();
     if (f.action) query.action = f.action;
-    if (f.from) query.from = toUtc(f.from, 0);
-    if (f.to) query.to = toUtc(f.to, 59);
+    if (f.fromDate) query.from = toUtc(f.fromDate, f.fromTime || "00:00", 0);
+    if (f.toDate) query.to = toUtc(f.toDate, f.toTime || "23:59", 59);
     const data = await call<{ items: Row[]; total: number; page: number; pages: number }>(
       "/api/audit",
       { query }
@@ -109,16 +109,20 @@ function doJump() {
   jumpTo.value = "";
 }
 
-// datetime-local (mahalliy vaqt) -> serverdagi UTC formati "YYYY-MM-DD HH:MM:SS".
-function toUtc(local: string, sec: number) {
-  const d = new Date(local);
-  d.setSeconds(sec);
-  return d.toISOString().slice(0, 19).replace("T", " ");
+// Mahalliy sana (ISO) + "SS:DD" -> serverdagi UTC formati "YYYY-MM-DD HH:MM:SS".
+function toUtc(date: string, time: string, sec: number) {
+  const [h, m] = (/^\d{1,2}:\d{2}$/.test(time.trim()) ? time.trim() : "00:00").split(":").map(Number);
+  const [y, mo, d] = date.split("-").map(Number);
+  const dt = new Date(y, mo - 1, d, h, m, sec);
+  return dt.toISOString().slice(0, 19).replace("T", " ");
 }
 
 // Server vaqti UTC (SQLite datetime('now')) -> mahalliy vaqtda ko'rsatamiz.
-const fmt = (s: string) => new Date(s.replace(" ", "T") + "Z").toLocaleString("uz-UZ", { hour12: false });
-const detailText = (d: any) => (d ? Object.entries(d).map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`).join(", ") : "");
+const fmt = (s: string) => fmtUtc(s);
+// Tafsilotdagi ISO sanalar ("2026-11-07T08:59:33") ham KK.OO.YYYY ko'rinishida.
+const isoToDmy = (v: string) => v.replace(/(\d{4})-(\d{2})-(\d{2})(?:T|\b)/g, (_, y, m, d) => `${d}.${m}.${y} `).trim();
+const detailText = (d: any) =>
+  d ? Object.entries(d).map(([k, v]) => `${k}: ${isoToDmy(typeof v === "object" ? JSON.stringify(v) : String(v))}`).join(", ") : "";
 
 onMounted(() => load());
 </script>
@@ -144,8 +148,14 @@ onMounted(() => load());
         <option value="group">Guruhlar</option>
         <option value="nvr">NVR</option>
       </select>
-      <input v-model="f.from" class="input" type="datetime-local" title="Dan" />
-      <input v-model="f.to" class="input" type="datetime-local" title="Gacha" />
+      <span class="dt" title="Dan">
+        <DateInput v-model="f.fromDate" :max="todayIso()" placeholder="dan: kk.oo.yyyy" />
+        <input v-model="f.fromTime" class="input mono time" placeholder="00:00" maxlength="5" />
+      </span>
+      <span class="dt" title="Gacha">
+        <DateInput v-model="f.toDate" :max="todayIso()" placeholder="gacha: kk.oo.yyyy" />
+        <input v-model="f.toTime" class="input mono time" placeholder="23:59" maxlength="5" />
+      </span>
       <button class="btn btn-primary" type="submit">Filtrlash</button>
     </form>
 
@@ -203,9 +213,22 @@ onMounted(() => load());
 </template>
 
 <style scoped>
+.dt {
+  display: flex;
+  gap: 4px;
+}
+.dt :deep(.date-input) {
+  flex: 1;
+}
+.dt :deep(.date-input .input) {
+  width: 100%;
+}
+.time {
+  width: 70px;
+}
 .filters {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr auto;
+  grid-template-columns: 1fr 1fr auto auto auto;
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -216,12 +239,6 @@ onMounted(() => load());
 }
 .nowrap {
   white-space: nowrap;
-}
-.small {
-  font-size: 12px;
-}
-.mono {
-  font-family: ui-monospace, monospace;
 }
 .bad {
   color: var(--danger);
@@ -247,7 +264,7 @@ onMounted(() => load());
 .num.cur {
   background: var(--accent);
   border-color: var(--accent);
-  color: #04212f;
+  color: var(--accent-ink);
   font-weight: 600;
 }
 .dots {
@@ -265,7 +282,7 @@ onMounted(() => load());
 }
 .input-xs {
   padding: 5px 8px;
-  font-size: 13px;
+  font-size: 15px;
   width: 64px;
 }
 .sel {

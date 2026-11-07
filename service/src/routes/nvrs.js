@@ -2,7 +2,7 @@ import { Router } from "express";
 import db from "../db.js";
 import { requirePerm } from "../auth.js";
 import { audit } from "../rbac.js";
-import { deviceInfo, listChannels } from "../hikvision.js";
+import { deviceInfo, listChannels, listStreams, getStream, setStream, snapshot } from "../hikvision.js";
 import { stopLive } from "../live.js";
 import { makeSlug } from "./cameras.js";
 
@@ -187,6 +187,140 @@ router.post("/:id(\\d+)/import", manage, async (req, res) => {
 
   audit(req, "nvr.import", { details: { nvr: row.name, count: created.length } });
   res.status(201).json({ created: created.length, cameras: created });
+});
+
+// =============================================================================
+//  Kamera sozlamalari (NVR orqali): nom, kodek, o'lcham, sifat, kadr tezligi.
+// =============================================================================
+
+function nvrOr404(req, res) {
+  const row = db.prepare("SELECT * FROM nvrs WHERE id = ?").get(req.params.id);
+  if (!row) res.status(404).json({ error: "NVR topilmadi" });
+  return row;
+}
+const chOf = (req) => Number(req.params.ch);
+const busyMsg = (e) =>
+  e.status === 403
+    ? "Kamera hozir javob bermayapti (qayta ishga tushayotgan yoki oʻchiq boʻlishi mumkin). 1–2 daqiqadan keyin urinib koʻring."
+    : e.message;
+
+// Hamma kanallar: nom, IP, holat + asosiy oqim sozlamasi + platformadagi kamera.
+router.get("/:id(\\d+)/streams", manage, async (req, res) => {
+  const row = nvrOr404(req, res);
+  if (!row) return;
+  let channels, streams;
+  try {
+    [channels, streams] = await Promise.all([listChannels(row), listStreams(row)]);
+  } catch (e) {
+    return res.status(502).json({ error: "NVR'dan maʼlumot olib boʻlmadi: " + e.message });
+  }
+  const cams = new Map(
+    db.prepare("SELECT id, channel, name FROM cameras WHERE nvr_id = ?").all(row.id).map((c) => [c.channel, c])
+  );
+  res.json(
+    channels.map((ch) => ({
+      ...ch,
+      stream: streams.get(ch.channel) || null,
+      camera_id: cams.get(ch.channel)?.id ?? null,
+      camera_name: cams.get(ch.channel)?.name ?? null,
+    }))
+  );
+});
+
+router.get("/:id(\\d+)/channels/:ch(\\d+)/stream", manage, async (req, res) => {
+  const row = nvrOr404(req, res);
+  if (!row) return;
+  try {
+    res.json(await getStream(row, chOf(req)));
+  } catch (e) {
+    res.status(502).json({ error: busyMsg(e) });
+  }
+});
+
+router.put("/:id(\\d+)/channels/:ch(\\d+)/stream", manage, async (req, res) => {
+  const row = nvrOr404(req, res);
+  if (!row) return;
+  const ch = chOf(req);
+  const b = req.body || {};
+  let cur;
+  try {
+    cur = await getStream(row, ch);
+  } catch (e) {
+    return res.status(502).json({ error: busyMsg(e) });
+  }
+  const { caps, current } = cur;
+  const ch2 = {};
+  // Faqat kamera qo'llaydigan qiymatlar qabul qilinadi.
+  if (b.codec !== undefined) {
+    if (!caps.codecs.includes(b.codec)) return res.status(400).json({ error: "Bu kamera bu kodekni qoʻllamaydi" });
+    ch2.codec = b.codec;
+  }
+  if (b.width !== undefined || b.height !== undefined) {
+    const ok = caps.resolutions.some((r) => r.width === Number(b.width) && r.height === Number(b.height));
+    if (!ok) return res.status(400).json({ error: "Bu oʻlcham qoʻllanmaydi" });
+    ch2.width = Number(b.width);
+    ch2.height = Number(b.height);
+  }
+  if (b.rc !== undefined) {
+    if (!caps.rc.includes(b.rc)) return res.status(400).json({ error: "Bitreyt turi notoʻgʻri" });
+    ch2.rc = b.rc;
+  }
+  if (b.bitrate !== undefined) {
+    const v = Number(b.bitrate);
+    const r = caps.bitrate || { min: 32, max: 16384 };
+    if (!Number.isInteger(v) || v < r.min || v > r.max) {
+      return res.status(400).json({ error: `Bitreyt ${r.min}–${r.max} kbit/s oraligʻida boʻlsin` });
+    }
+    ch2.bitrate = v;
+  }
+  if (b.fps !== undefined) {
+    if (!caps.fps.includes(Number(b.fps))) return res.status(400).json({ error: "Kadr tezligi notoʻgʻri" });
+    ch2.fps = Number(b.fps);
+  }
+  if (typeof b.smart === "boolean" && current.smart !== null) ch2.smart = b.smart;
+  if (!Object.keys(ch2).length) return res.status(400).json({ error: "Oʻzgarish yoʻq" });
+
+  let next;
+  try {
+    next = await setStream(row, ch, ch2);
+  } catch (e) {
+    return res.status(502).json({ error: busyMsg(e) });
+  }
+  // Kodek o'zgargan bo'lishi mumkin — jonli oqim qayta aniqlab, qayta ochilsin.
+  for (const c of db.prepare("SELECT id, slug FROM cameras WHERE nvr_id = ? AND channel = ?").all(row.id, ch)) {
+    db.prepare("UPDATE cameras SET codec = NULL WHERE id = ?").run(c.id);
+    await stopLive(c.id, c.slug);
+  }
+  const camera = db.prepare("SELECT id FROM cameras WHERE nvr_id = ? AND channel = ?").get(row.id, ch);
+  audit(req, "nvr.stream", {
+    cameraId: camera?.id ?? null,
+    details: { nvr: row.name, channel: ch, before: current, changes: ch2 },
+  });
+  res.json({ ok: true, stream: next, restarting: true });
+});
+
+// Kanal nomi platformada (kamera qo'shilmagan bo'lsa — avval import).
+router.put("/:id(\\d+)/channels/:ch(\\d+)/name", manage, (req, res) => {
+  const row = nvrOr404(req, res);
+  if (!row) return;
+  const name = String(req.body?.name || "").trim();
+  if (!name || name.length > 60) return res.status(400).json({ error: "Nom 1–60 belgi boʻlsin" });
+  const cam = db.prepare("SELECT id, name FROM cameras WHERE nvr_id = ? AND channel = ?").get(row.id, chOf(req));
+  if (!cam) return res.status(404).json({ error: "Bu kanal hali platformaga qoʻshilmagan" });
+  db.prepare("UPDATE cameras SET name = ? WHERE id = ?").run(name, cam.id);
+  audit(req, "camera.rename", { cameraId: cam.id, details: { from: cam.name, to: name } });
+  res.json({ ok: true, id: cam.id, name });
+});
+
+router.get("/:id(\\d+)/channels/:ch(\\d+)/snapshot", manage, async (req, res) => {
+  const row = nvrOr404(req, res);
+  if (!row) return;
+  try {
+    const img = await snapshot(row, chOf(req));
+    res.set({ "Content-Type": "image/jpeg", "Cache-Control": "no-store" }).send(img);
+  } catch (e) {
+    res.status(502).json({ error: busyMsg(e) });
+  }
 });
 
 export default router;

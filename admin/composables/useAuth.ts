@@ -15,9 +15,9 @@ export interface Me {
 // Ruxsatga qarab "uy" sahifa: login'dan keyin yoki ruxsatsiz sahifaga
 // kirilganda shu yerga yo'naltiriladi.
 const HOME_ORDER: [string, string][] = [
-  ["cameras.manage", "/admin"],
   ["live.view", "/live"],
   ["playback.view", "/playback"],
+  ["cameras.manage", "/admin"],
   ["users.manage", "/users"],
   ["status.view", "/status"],
   ["audit.view", "/audit"],

@@ -20,8 +20,11 @@ COPY . .
 # nuxt.config'da serviceBase="" (default) -> admin `/api` ni SHU domendan chaqiradi,
 # nginx uni service:4000 ga uzatadi. Shu sabab build vaqtida domen bilish shart emas.
 RUN npm run generate
+# CSP (inline skript hash'lari bilan) va boshqa xavfsizlik sarlavhalari.
+RUN node scripts/security-headers.mjs security-headers.conf
 
 # --- 2-bosqich: nginx statik server ---
 FROM nginx:alpine
 COPY --from=build /app/.output/public /usr/share/nginx/html
+COPY --from=build /app/security-headers.conf /etc/nginx/snippets/security-headers.conf
 EXPOSE 80

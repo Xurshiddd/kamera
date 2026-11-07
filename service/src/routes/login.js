@@ -16,16 +16,23 @@ const router = Router();
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILS = 5;
 const FAIL_DELAY_MS = 700;
-const fails = new Map(); // key -> { count, firstAt }
+const fails = new Map(); // IP -> { count, firstAt }
+// Bitta login'ga turli IP'lardan terib ko'rish (yoki IP soxtalashtirish) uchun
+// login nomi bo'yicha ham hisob: 15 daqiqada 10 xato -> 15 daqiqa blok.
+const MAX_USER_FAILS = 10;
+const userFails = new Map(); // username -> { count, firstAt }
 
 // Muddati o'tgan yozuvlarni tozalaymiz (xotira o'sib ketmasin).
 function prune(now) {
-  for (const [k, v] of fails) {
-    if (now - v.firstAt > WINDOW_MS) fails.delete(k);
+  for (const m of [fails, userFails]) {
+    for (const [k, v] of m) {
+      if (now - v.firstAt > WINDOW_MS) m.delete(k);
+    }
   }
   // Favqulodda himoya: kimdir IP'larni soxtalashtirib to'ldirsa ham
   // xotira portlamasin.
   if (fails.size > 5000) fails.clear();
+  if (userFails.size > 5000) userFails.clear();
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -43,8 +50,10 @@ router.post("/login", async (req, res) => {
   // Hisob IP bo'yicha: bitta IP'dan turli login'larni terib ko'rish ham cheklanadi.
   const key = req.clientIp;
 
+  const uKey = username.trim().toLowerCase().slice(0, 64);
   const rec = fails.get(key);
-  if (rec && rec.count >= MAX_FAILS) {
+  const uRec = userFails.get(uKey);
+  if ((rec && rec.count >= MAX_FAILS) || (uRec && uRec.count >= MAX_USER_FAILS)) {
     return res.status(429).json({
       error: "Urinishlar ko'payib ketdi. 15 daqiqadan so'ng qayta urining.",
     });
@@ -59,6 +68,9 @@ router.post("/login", async (req, res) => {
     const r = fails.get(key) || { count: 0, firstAt: now };
     r.count++;
     fails.set(key, r);
+    const u = userFails.get(uKey) || { count: 0, firstAt: now };
+    u.count++;
+    userFails.set(uKey, u);
     req.user = null;
     audit(req, "login.fail", { details: { username: username.slice(0, 64) } });
     await sleep(FAIL_DELAY_MS);
@@ -66,6 +78,7 @@ router.post("/login", async (req, res) => {
   }
 
   fails.delete(key);
+  userFails.delete(uKey);
   db.prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(user.id);
   req.user = { id: user.id, username: user.username };
   audit(req, "login");

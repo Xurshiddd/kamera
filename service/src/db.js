@@ -132,4 +132,10 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS audit_log_created ON audit_log(created_at);
 `);
 
+// Migratsiya: token versiyasi. Parol almashsa oshiriladi — eski tokenlar
+// (masalan o'g'irlangan) darhol yaroqsiz bo'ladi.
+if (!db.prepare("PRAGMA table_info(users)").all().some((c) => c.name === "token_version")) {
+  db.exec("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
+}
+
 export default db;

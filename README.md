@@ -1,49 +1,73 @@
-# Kamera — IP kameralarni brauzerga chiqarish
+# Kamera tizimi
 
-IP kameralar (RTSP) MediaMTX orqali HLS'ga aylantiriladi va brauzerda
-ko'rsatiladi. Hammasi **bitta serverda (172.16.0.23), Docker'da** ishlaydi.
+Institut auditoriyalaridagi kameralarni brauzerda **jonli kuzatish**, Hikvision
+NVR'dagi **yozuvlarni qayta ko'rish** va kerakli qismini **MP4 qilib yuklab
+olish**. Dekanat xodimlari shaxsiy login/parol bilan kiradi, har biri faqat
+o'ziga ruxsat berilgan xonalarni ko'radi. Hammasi bitta serverda, Docker'da.
 
 ```
 Brauzer ── https://cam.ttysi.uz ── Hestia proxy ──> http://172.16.0.23:3000
                                                           │
-                                                    ┌─ gateway (nginx) ─┐
-                                                    │  /      SPA: mehmon jonli sahifa (loginsiz)
-                                                    │  /admin SPA: boshqaruv (/login orqali parol)
-                                                    │  /api   ──> service:4000
-                                                    │  /hls   statik HLS fayllar
-                                                    └────────────────────┘
-service  — kamera CRUD (SQLite), kodek aniqlash, MediaMTX boshqaruvi
-mediamtx — RTSP tortadi, ffmpeg bilan HLS segmentlarni ./hls ga yozadi
+                                         ┌──────── gateway (nginx) ────────┐
+                                         │ /         mehmon sahifa (ochiq) │
+                                         │ /login …  Nuxt SPA (boshqaruv)  │
+                                         │ /api      ──> service:4000      │
+                                         │ /hls      jonli HLS (statik)    │
+                                         │ /hls-pb   yozuv HLS (statik)    │
+                                         └─────────────────────────────────┘
+service  — API (SQLite): foydalanuvchilar, rollar, kameralar, NVR, playback, eksport
+mediamtx — RTSP'ni tortadi, HLS segmentlarni ./hls ga yozadi
+NVR      — Hikvision (ISAPI + RTSP): jonli oqim, yozuvlar, kamera sozlamalari
 ```
 
-**Kodek avtomatik aniqlanadi** (ffprobe):
+## Bo'limlar
 
-- Kamera **H264** bersa — transkod YO'Q, video to'g'ridan-to'g'ri o'tadi (CPU ~0).
-- Kamera **H265 (HEVC)** bersa — H264 ga transkod qilinadi (brauzerlar H265'ni
-  HLS orqali o'ynay olmaydi).
+| Bo'lim | Kim uchun | Nima qiladi |
+|---|---|---|
+| Jonli kuzatuv | `live.view` | Ruxsat etilgan xonalar, bino bo'yicha filtr, butun ekranga ochish |
+| Yozuvlar | `playback.view` | Kun tanlash, 24 soatlik vaqt chizig'i, qayta ko'rish |
+| Qirqib yuklab olish | `playback.export` | Boshlanish/Tugash belgilari → MP4 (kamera kodekida, aniq soniyadan) |
+| Boshqaruv | admin ruxsatlari | Xodimlar, Kameralar (NVR), Kameralar ro'yxati, Xona guruhlari, Rollar, NVR qurilmalar, Kirishlar tarixi, Server holati |
+
+- **Rollar va ruxsatlar** kengaytiriladi: yangi funksiya uchun `service/src/rbac.js`
+  dagi `PERMISSIONS` ga kod qo'shiladi va u Rollar sahifasida paydo bo'ladi.
+- **Kirishlar tarixi (audit)**: kirish, yozuv ko'rish, eksport va har bir boshqaruv amali.
+- **Kameralar (NVR)**: NVR orqali kamera kodekini (H.264/H.265), o'lchamini, sifatini,
+  kadr tezligini va Smart kodekni o'zgartirish. Saqlanganda kamera 1–2 daqiqa qayta
+  ulanadi. Nom faqat saytda o'zgaradi.
+- Sanalar hamma joyda **KK.OO.YYYY** ko'rinishida.
+
+## Jonli oqim va kodek
+
+- NVR kameralari **so'rov bo'yicha** yoqiladi: kimdir ko'rayotgan bo'lsa ochiladi,
+  hech kim ko'rmay qo'ygach ~1 daqiqada o'chadi.
+- Kamera **H.264** bersa — transkod yo'q (CPU ~0). **H.265** bersa — H.264 ga
+  transkod (brauzerlar H.265 ni o'ynay olmaydi). Shuning uchun kameralarni H.264 ga
+  o'tkazish tavsiya etiladi (Boshqaruv → Kameralar (NVR)).
+
+## NVR talablari
+
+- ISAPI yoqilgan (80-port), RTSP (554), server (172.16.0.23) dan ikkalasiga kirish ochiq.
+- NVR'da **NTP va Asia/Tashkent** vaqt zonasi — aks holda yozuv vaqtlari siljiydi.
+- Loyihaga alohida NVR foydalanuvchisi bering. Faqat ko'rish/yuklash uchun *Operator*
+  yetarli; kamera sozlamalarini o'zgartirish uchun administrator huquqi kerak.
 
 ## Deploy (172.16.0.23)
 
 ```bash
-# 1. Loyihani serverga ko'chiring (git clone yoki scp)
 cd kamera
-
-# 2. Muhit sozlamalari (parol va kalitlarni ALMASHTIRING)
-cp .env.example .env
+cp .env.example .env     # parol va kalitlarni ALMASHTIRING
 nano .env
-
-# 3. Ishga tushirish
 docker compose up -d --build
 ```
 
-Hestia'da `cam.ttysi.uz` domeni proxy shabloni bilan `172.16.0.23:3000` ga
-yo'naltiriladi.
+Birinchi ishga tushishda `.env` dagi `ADMIN_USERNAME` / `ADMIN_PASSWORD` dan
+superadmin yaratiladi (faqat bazada foydalanuvchi bo'lmasa). Keyin:
+Boshqaruv → NVR qurilmalar → NVR qo'shish → kanallarni import → Xona guruhlari →
+Xodimlar.
 
-- Mehmon sahifa: `https://cam.ttysi.uz` — loginsiz jonli kuzatuv (2×2 grid,
-  pagination, "Ko'rish" bosilganda oqim ochiladi)
-- Boshqaruv: `https://cam.ttysi.uz/login` → parol → `/admin`
-- HLS: `https://cam.ttysi.uz/hls/{slug}/index.m3u8` (login/parolsiz, istalgan
-  saytga embed qilinadi)
+Lokal kompyuterda 3000-port band bo'lsa `.env` da `GATEWAY_PORT=3001` va
+`STREAM_BASE=http://localhost:3001/hls`.
 
 ## Yangilash
 
@@ -52,33 +76,34 @@ git pull
 docker compose up -d --build
 ```
 
-> Transkod buyrug'i (`service/src/mediamtx.js`) o'zgarganda MediaMTX'dagi eski
-> yo'llar yangilanmaydi (mavjud yo'l uchun 400 qaytadi). To'liq yangilash:
-> `docker compose up -d --build --force-recreate`
-
 ## Fayl tuzilishi
 
 ```
 kamera/
-├── docker-compose.yml   # butun stack (gateway :3000, service, mediamtx)
-├── .env.example         # muhit namunasi (.env ga nusxalanadi, git'ga tushmaydi)
-├── mediamtx.yml         # MediaMTX: statik HLS + publish himoyasi
-├── gateway.conf         # nginx: SPA + /api proxy + /hls statik
+├── docker-compose.yml   # gateway :3000, service, mediamtx
+├── .env.example         # muhit namunasi (.env git'ga tushmaydi)
+├── mediamtx.yml         # MediaMTX: statik HLS + auth callback
+├── gateway.conf         # nginx: SPA + /api proxy + /hls, /hls-pb statik
 ├── admin/               # Nuxt SPA (Docker ichida quriladi)
-└── service/             # Node API: kameralar, login, kodek aniqlash
+│   ├── pages/           # live, playback, nvr-cameras, users, roles, …
+│   ├── components/      # HlsPlayer, DateInput, CameraForm
+│   └── utils/date.ts    # KK.OO.YYYY formatlash
+└── service/src/
+    ├── rbac.js          # ruxsatlar, rollar, audit
+    ├── hikvision.js     # NVR: ISAPI (digest), qidiruv, yuklab olish, oqim sozlamalari
+    ├── live.js          # so'rov bo'yicha jonli oqim
+    ├── playback.js      # ko'rish sessiyalari va MP4 eksport
+    └── routes/          # API marshrutlari
 ```
 
-Ish vaqtida yaratiladi (git'ga tushmaydi): `./data/` (kamera.db), `./hls/`
-(segmentlar).
+Ish vaqtida yaratiladi (git'ga tushmaydi): `./data/` (kamera.db, eksportlar),
+`./hls/`, `./hls-pb/`.
 
 ## API (tashqi tizimlar uchun)
 
-Boshqa backend (masalan LMS) kamera API'sini `x-api-key: <SERVICE_API_KEY>`
-sarlavhasi bilan chaqira oladi:
+`x-api-key: <SERVICE_API_KEY>` sarlavhasi bilan barcha API'lar to'liq huquqda:
 
-- `GET  /api/cameras` — ro'yxat (har birida `hls` URL)
-- `POST /api/cameras` — qo'shish: `{ name, ip, port?, login, parol, rtspPath? }`
-- `DELETE /api/cameras/:id` — o'chirish
+- `GET /api/cameras` — kameralar (har birida `hls` URL)
+- `POST /api/cameras`, `PUT /api/cameras/:id`, `DELETE /api/cameras/:id`
 
-Ochiq (kalitsiz): `GET /api/public/cameras` — mehmon sahifa ro'yxati
-(faqat `id, name, slug, hls` — sirlar qaytmaydi).
+Ochiq (kalitsiz): `GET /api/public/cameras` — mehmon sahifadagi ochiq kameralar.

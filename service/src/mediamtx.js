@@ -44,7 +44,7 @@ export async function probeCodec(camera) {
 // RTSP manzilini login/parol bilan yasaymiz.
 // Diqqat: bu manzil faqat server ichida qoladi, tashqariga CHIQMAYDI.
 // NVR kamerasi bo'lsa (nvr_id) — manba NVR kanali (Streaming/Channels/{ch}01).
-export function buildRtspSource(c) {
+function buildRtspSource(c) {
   if (c.nvr_id) {
     const nvr = db.prepare("SELECT * FROM nvrs WHERE id = ?").get(c.nvr_id);
     if (!nvr) throw new Error(`NVR #${c.nvr_id} topilmadi`);

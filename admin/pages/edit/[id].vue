@@ -34,11 +34,15 @@ async function submit(payload: NewCamera) {
 
 <template>
   <section class="wrap">
-    <h1>Kamerani tahrirlash</h1>
-    <p v-if="camera" class="muted">
+    <div class="page-head">
+      <div>
+        <h1>Kamerani tahrirlash</h1>
+        <p v-if="camera" class="sub">
       <span class="mono">{{ camera.slug }}</span> — saqlangach kodek qayta
       aniqlanadi va oqim yangi sozlama bilan qayta ishga tushadi.
-    </p>
+        </p>
+      </div>
+    </div>
 
     <p v-if="loadError" class="err">{{ loadError }}</p>
     <CameraForm
@@ -56,19 +60,5 @@ async function submit(payload: NewCamera) {
 <style scoped>
 .wrap {
   max-width: 560px;
-}
-h1 {
-  margin: 0 0 4px;
-  font-size: 22px;
-}
-.muted {
-  color: var(--muted);
-  margin: 0 0 20px;
-}
-.mono {
-  font-family: ui-monospace, monospace;
-}
-.err {
-  color: var(--danger);
 }
 </style>

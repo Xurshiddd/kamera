@@ -6,7 +6,7 @@ import { audit, canAccessCamera } from "../rbac.js";
 import { searchRecordings } from "../hikvision.js";
 import {
   TIME_RE, nvrOf, startSession, beat, stopSession,
-  createExport, listExports, getExport, exportFile, deleteExport, EXPORT_MAX_MINUTES,
+  createExport, listExports, getExport, exportFile, deleteExport,
 } from "../playback.js";
 
 const router = Router();
@@ -94,7 +94,6 @@ router.delete("/playback/sessions/:sid", view, (req, res) => {
 // --- Eksport (qirqib yuklab olish) ---
 const exp = requirePerm("playback.export");
 
-router.get("/playback/exports/limits", exp, (req, res) => res.json({ maxMinutes: EXPORT_MAX_MINUTES }));
 
 router.post("/playback/exports", exp, (req, res) => {
   const { cameraId, start, end } = req.body || {};

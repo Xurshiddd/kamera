@@ -2,6 +2,8 @@
 definePageMeta({ permission: "cameras.manage" });
 
 const { list, remove } = useCameras();
+const route = useRoute();
+const router = useRouter();
 
 const cameras = ref<Camera[]>([]);
 const loading = ref(true);
@@ -21,6 +23,25 @@ const filtered = computed(() => {
   return cameras.value.filter(
     (c) => c.name.toLowerCase().includes(s) || c.slug.includes(s) || String(c.channel ?? "") === s
   );
+});
+
+// Sahifalash: 12 ta kartochka (3 ustun × 4 qator). Sahifa URL'da saqlanadi.
+const PER = 12;
+const page = ref(Math.max(1, Number(route.query.page) || 1));
+const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PER)));
+const visible = computed(() => filtered.value.slice((page.value - 1) * PER, page.value * PER));
+const pageInfo = computed(() =>
+  filtered.value.length
+    ? `${(page.value - 1) * PER + 1}–${Math.min(page.value * PER, filtered.value.length)} / jami ${filtered.value.length}`
+    : ""
+);
+watch(q, () => (page.value = 1));
+watch(pages, (n) => {
+  if (page.value > n) page.value = n;
+});
+watch(page, (p) => {
+  router.replace({ query: { ...route.query, page: p > 1 ? p : undefined } });
+  window.scrollTo({ top: 0, behavior: "smooth" });
 });
 
 async function reload() {
@@ -65,7 +86,7 @@ onMounted(reload);
 
 <template>
   <section>
-    <div class="head">
+    <div class="page-head">
       <div>
         <h1>Kameralar</h1>
         <p v-if="!loading && cameras.length" class="sub">
@@ -86,7 +107,7 @@ onMounted(reload);
     </p>
 
     <div v-else class="grid">
-      <article v-for="c in filtered" :key="c.id" class="card">
+      <article v-for="c in visible" :key="c.id" class="card">
         <div class="card-head">
           <div class="title">
             <h3>{{ c.name }}</h3>
@@ -119,15 +140,22 @@ onMounted(reload);
             </div>
           </div>
           <div class="tools">
-            <NuxtLink :to="`/edit/${c.id}`" class="btn btn-sm">Tahrirlash</NuxtLink>
-            <button class="btn btn-sm btn-danger" @click="onDelete(c)">O'chirish</button>
+            <NuxtLink :to="`/edit/${c.id}`" class="btn icon-btn" :aria-label="`${c.name} — tahrirlash`" title="Tahrirlash">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></svg>
+            </NuxtLink>
+            <button class="btn icon-btn btn-danger" :aria-label="`${c.name} — oʻchirish`" title="Oʻchirish" @click="onDelete(c)">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12" /><path d="M9 7V4h6v3" /></svg>
+            </button>
           </div>
         </div>
 
         <ClientOnly>
           <!-- Ochilmasa pleyer o'zi har 5s da qayta urinadi (HlsPlayer) -->
           <HlsPlayer v-if="playing.has(c.id)" :src="c.hls" :camera-id="c.id" />
-          <button v-else class="ph" @click="toggle(c.id)">▶ Ko'rish</button>
+          <button v-else class="ph" @click="toggle(c.id)">
+            <svg width="40" height="40" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+            Koʻrish
+          </button>
         </ClientOnly>
 
         <div class="url-row">
@@ -139,31 +167,11 @@ onMounted(reload);
         </div>
       </article>
     </div>
+    <Pager v-if="!loading && filtered.length" v-model="page" :pages="pages" :info="pageInfo" />
   </section>
 </template>
 
 <style scoped>
-.head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 18px;
-}
-h1 {
-  margin: 0;
-  font-size: 22px;
-}
-.sub {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-.muted {
-  color: var(--muted);
-}
-.err {
-  color: var(--danger);
-}
 .head-tools {
   display: flex;
   gap: 8px;
@@ -177,11 +185,21 @@ h1 {
   width: 100%;
   aspect-ratio: 16 / 9;
   border-radius: 10px;
-  border: 1px dashed var(--line);
-  background: #000;
-  color: var(--muted);
-  font-size: 15px;
+  border: 0;
+  background: #1f2937;
+  color: #f9fafb;
+  font: inherit;
+  font-size: 19px;
+  font-weight: 600;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   cursor: pointer;
+}
+.ph:hover {
+  background: #111827;
 }
 .ph:hover {
   color: var(--accent);
@@ -200,7 +218,7 @@ h1 {
   transition: border-color 0.15s ease, transform 0.15s ease;
 }
 .card:hover {
-  border-color: #3a4551;
+  border-color: var(--accent);
 }
 .card-head {
   display: flex;
@@ -209,23 +227,34 @@ h1 {
   gap: 8px;
   margin-bottom: 12px;
 }
+.title {
+  min-width: 0;
+}
 .title h3 {
-  margin: 0 0 4px;
-  font-size: 16px;
+  margin: 0 0 6px;
+  font-size: 21px;
+  overflow-wrap: anywhere;
 }
 .meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .slug {
-  font-size: 12px;
+  font-size: 15px;
   color: var(--muted);
 }
 .tools {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   flex: none;
+}
+/* Faqat belgi: matn o'rnini aria-label/title bosadi; o'lchami 48x48 */
+.icon-btn {
+  width: 48px;
+  min-height: 48px;
+  padding: 0;
 }
 .url-row {
   margin-top: 12px;
@@ -234,7 +263,7 @@ h1 {
   gap: 8px;
 }
 .tag {
-  font-size: 11px;
+  font-size: 15px;
   color: var(--muted);
   flex: none;
 }
@@ -242,10 +271,7 @@ h1 {
   flex: 1;
   min-width: 0;
   padding: 7px 10px;
-  font-size: 12px;
-}
-.mono {
-  font-family: ui-monospace, monospace;
+  font-size: 15px;
 }
 .copied {
   color: var(--ok);

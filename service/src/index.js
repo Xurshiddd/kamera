@@ -5,6 +5,7 @@ import cors from "cors";
 import camerasRouter from "./routes/cameras.js";
 import publicRouter from "./routes/public.js";
 import streamAuthRouter from "./routes/streamAuth.js";
+import hlsAuthRouter from "./routes/hlsAuth.js";
 import loginRouter from "./routes/login.js";
 import statusRouter from "./routes/status.js";
 import meRouter from "./routes/me.js";
@@ -39,6 +40,9 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 // MediaMTX'ning auth-callback'i (himoya tokenda, API kalitda emas)
 app.use("/api", streamAuthRouter);
+
+// nginx auth_request: yopiq kameralarning /hls/ oqimi faqat ruxsati borlarga
+app.use("/api", hlsAuthRouter);
 
 // Login/parol -> JWT token
 app.use("/api", loginRouter);
