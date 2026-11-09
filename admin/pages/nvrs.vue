@@ -17,6 +17,7 @@ interface Channel {
   online: boolean | null;
   camera_id: number | null;
   camera_name: string | null;
+  dup: { camera_id: number; camera_name: string; where: string } | null;
 }
 interface Group { id: number; name: string }
 
@@ -116,7 +117,7 @@ const visibleChannels = computed(() => {
   return channels.value.filter(
     (c) =>
       (!onlyOnline.value || c.online) &&
-      (!onlyNew.value || !c.camera_id) &&
+      (!onlyNew.value || (!c.camera_id && !c.dup)) &&
       (!s || c.name.toLowerCase().includes(s) || String(c.channel) === s || (c.ip || "").includes(s))
   );
 });
@@ -124,6 +125,9 @@ const stats = computed(() => ({
   total: channels.value.length,
   online: channels.value.filter((c) => c.online).length,
   imported: channels.value.filter((c) => c.camera_id).length,
+  dup: channels.value.filter((c) => c.dup && !c.camera_id).length,
+  // Ikki joydan ham qo'shib bo'lingan (eski importlar) — bittasini o'chirish kerak.
+  doubled: channels.value.filter((c) => c.dup && c.camera_id).length,
 }));
 
 async function openChannels(n: Nvr) {
@@ -148,7 +152,7 @@ async function openChannels(n: Nvr) {
 function selectVisible(on: boolean) {
   const set = new Set(selected.value);
   for (const c of visibleChannels.value) {
-    if (c.camera_id) continue;
+    if (c.camera_id || c.dup) continue;
     on ? set.add(c.channel) : set.delete(c.channel);
   }
   selected.value = [...set];
@@ -159,7 +163,7 @@ async function doImport() {
   importing.value = true;
   importMsg.value = "";
   try {
-    const r = await call<{ created: number }>(`/api/nvrs/${chNvr.value.id}/import`, {
+    const r = await call<{ created: number; skipped: unknown[] }>(`/api/nvrs/${chNvr.value.id}/import`, {
       method: "POST",
       body: {
         channels: selected.value,
@@ -167,9 +171,11 @@ async function doImport() {
         groupId: importGroup.value || null,
       },
     });
-    importMsg.value = `${r.created} ta kamera qo'shildi.`;
+    const msg =
+      `${r.created} ta kamera qo'shildi.` +
+      (r.skipped?.length ? ` ${r.skipped.length} tasi boshqa NVR'da allaqachon bor — o'tkazib yuborildi.` : "");
     await Promise.all([openChannels(chNvr.value), reload()]);
-    importMsg.value = `${r.created} ta kamera qo'shildi.`;
+    importMsg.value = msg;
   } catch (e: any) {
     importMsg.value = e?.data?.error || "Import xatosi.";
   } finally {
@@ -277,6 +283,11 @@ onMounted(reload);
           <strong>{{ chNvr.name }} — kanallar</strong>
           <div v-if="!chLoading && !chError" class="muted small">
             Jami {{ stats.total }} · onlayn {{ stats.online }} · import qilingan {{ stats.imported }}
+            <template v-if="stats.dup"> · boshqa NVR'da bor {{ stats.dup }}</template>
+          </div>
+          <div v-if="!chLoading && !chError && stats.doubled" class="err small">
+            {{ stats.doubled }} ta kamera ikki marta qo'shilgan (shu NVR'dan ham, boshqasidan ham) —
+            «Kameralar» bo'limida ortiqchasini o'chiring.
           </div>
         </div>
         <button class="btn btn-sm" @click="chNvr = null">Yopish</button>
@@ -305,7 +316,7 @@ onMounted(reload);
                     v-model="selected"
                     type="checkbox"
                     :value="c.channel"
-                    :disabled="!!c.camera_id"
+                    :disabled="!!c.camera_id || !!c.dup"
                   />
                 </td>
                 <td class="mono">{{ c.channel }}</td>
@@ -315,7 +326,12 @@ onMounted(reload);
                   <span v-if="c.online" class="badge badge-ok">onlayn</span>
                   <span v-else class="badge badge-muted">oflayn</span>
                 </td>
-                <td class="small">{{ c.camera_name ? "✓ " + c.camera_name : "" }}</td>
+                <td class="small">
+                  <template v-if="c.camera_name">✓ {{ c.camera_name }}</template>
+                  <div v-if="c.dup" :class="c.camera_id ? 'err' : 'muted'">
+                    {{ c.camera_id ? "⚠ Takror:" : "Bor:" }} {{ c.dup.camera_name }} ({{ c.dup.where }})
+                  </div>
+                </td>
               </tr>
               <tr v-if="!visibleChannels.length"><td colspan="6" class="muted">Kanal yo'q</td></tr>
             </tbody>

@@ -59,6 +59,12 @@ if (!cols.includes("nvr_id")) {
   db.exec("ALTER TABLE cameras ADD COLUMN stream TEXT NOT NULL DEFAULT 'main'");
 }
 
+// NVR kamerasining haqiqiy IP'si (NVR kanalidan). Bitta kamera bir nechta
+// NVR'ga ulangan bo'lishi mumkin — takror qo'shmaslik uchun shu bo'yicha tekshiriladi.
+if (!db.prepare("PRAGMA table_info(cameras)").all().some((c) => c.name === "cam_ip")) {
+  db.exec("ALTER TABLE cameras ADD COLUMN cam_ip TEXT");
+}
+
 db.pragma("foreign_keys = ON");
 
 db.exec(`

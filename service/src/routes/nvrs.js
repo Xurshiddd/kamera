@@ -114,6 +114,42 @@ router.post("/:id(\\d+)/test", manage, async (req, res) => {
   }
 });
 
+// IP -> shu IP'dagi kamera (to'g'ridan yoki istalgan NVR orqali).
+// Bitta IP kamera bir nechta NVR'da yozilayotgan bo'lishi mumkin — tizimga
+// faqat BIR marta qo'shiladi.
+function ipOwners() {
+  const m = new Map();
+  for (const c of db
+    .prepare(
+      `SELECT c.id, c.name, c.nvr_id, c.channel, n.name AS nvr_name,
+              CASE WHEN c.nvr_id IS NULL THEN c.ip ELSE c.cam_ip END AS real_ip
+       FROM cameras c LEFT JOIN nvrs n ON n.id = c.nvr_id
+       ORDER BY c.id`
+    )
+    .all()) {
+    if (!c.real_ip) continue;
+    if (!m.has(c.real_ip)) m.set(c.real_ip, []);
+    m.get(c.real_ip).push(c);
+  }
+  return m;
+}
+
+// Kanal ro'yxatidan shu NVR kameralarining IP'sini yangilab qo'yamiz
+// (eski importlarda IP saqlanmagan edi).
+function syncCamIps(nvrId, channels) {
+  const upd = db.prepare(
+    "UPDATE cameras SET cam_ip = ? WHERE nvr_id = ? AND channel = ? AND IFNULL(cam_ip, '') != ?"
+  );
+  db.transaction(() => {
+    for (const ch of channels) if (ch.ip) upd.run(ch.ip, nvrId, ch.channel, ch.ip);
+  })();
+}
+
+// Boshqa joydagi (boshqa NVR yoki boshqa kanal / to'g'ridan) shu IP'li kamera.
+function otherOwner(owners, ip, nvrId, channel) {
+  return (owners.get(ip) || []).find((c) => !(c.nvr_id === nvrId && c.channel === channel)) || null;
+}
+
 // NVR kanallari + qaysi biri allaqachon kamera sifatida qo'shilgan.
 router.get("/:id(\\d+)/channels", manage, async (req, res) => {
   const row = db.prepare("SELECT * FROM nvrs WHERE id = ?").get(req.params.id);
@@ -124,18 +160,31 @@ router.get("/:id(\\d+)/channels", manage, async (req, res) => {
   } catch (e) {
     return res.status(502).json({ error: "NVR'dan kanallarni olib bo'lmadi: " + e.message });
   }
+  syncCamIps(row.id, channels);
   const imported = new Map(
     db
       .prepare("SELECT id, channel, name FROM cameras WHERE nvr_id = ?")
       .all(row.id)
       .map((c) => [c.channel, c])
   );
+  const owners = ipOwners();
   res.json(
-    channels.map((ch) => ({
-      ...ch,
-      camera_id: imported.get(ch.channel)?.id ?? null,
-      camera_name: imported.get(ch.channel)?.name ?? null,
-    }))
+    channels.map((ch) => {
+      const dup = ch.ip ? otherOwner(owners, ch.ip, row.id, ch.channel) : null;
+      return {
+        ...ch,
+        camera_id: imported.get(ch.channel)?.id ?? null,
+        camera_name: imported.get(ch.channel)?.name ?? null,
+        // Shu kamera tizimda boshqa joydan allaqachon bor.
+        dup: dup
+          ? {
+              camera_id: dup.id,
+              camera_name: dup.name,
+              where: dup.nvr_id ? `${dup.nvr_name} · D${dup.channel}` : "to'g'ridan",
+            }
+          : null,
+      };
+    })
   );
 });
 
@@ -158,6 +207,8 @@ router.post("/:id(\\d+)/import", manage, async (req, res) => {
     return res.status(502).json({ error: "NVR'dan kanallarni olib bo'lmadi: " + e.message });
   }
 
+  syncCamIps(row.id, channels);
+  const owners = ipOwners();
   const exists = db.prepare("SELECT 1 FROM cameras WHERE nvr_id = ? AND channel = ?");
   const slugTaken = db.prepare("SELECT 1 FROM cameras WHERE slug = ?");
   const ins = db.prepare(
@@ -165,6 +216,7 @@ router.post("/:id(\\d+)/import", manage, async (req, res) => {
        is_public, nvr_id, channel, stream)
      VALUES (?, ?, '', 0, '', '', '', NULL, ?, ?, ?, 'main')`
   );
+  const setIp = db.prepare("UPDATE cameras SET cam_ip = ? WHERE id = ?");
   const toGroup = groupId
     ? db.prepare(
         "INSERT OR IGNORE INTO camera_group_items (group_id, camera_id) SELECT id, ? FROM camera_groups WHERE id = ?"
@@ -172,21 +224,32 @@ router.post("/:id(\\d+)/import", manage, async (req, res) => {
     : null;
 
   const created = [];
+  const skipped = [];
   db.transaction(() => {
     for (const ch of channels) {
       if (!wanted.has(ch.channel) || exists.get(row.id, ch.channel)) continue;
+      // Shu IP'li kamera boshqa NVR'dan (yoki shu NVR'ning boshqa kanalidan) qo'shilgan.
+      const dup = ch.ip ? otherOwner(owners, ch.ip, row.id, ch.channel) : null;
+      if (dup) {
+        skipped.push({ channel: ch.channel, ip: ch.ip, camera_id: dup.id, camera_name: dup.name });
+        continue;
+      }
       const name = ch.name || `Kanal ${ch.channel}`;
       // Slug kanal raqami bilan — nomlar takrorlansa ham (masalan ikkita "2.208") noyob.
       let slug = makeSlug(`${name}-k${ch.channel}`) || `k${ch.channel}`;
       if (slugTaken.get(slug)) slug = `${slug}-n${row.id}`;
       const id = ins.run(name, slug, isPublic, row.id, ch.channel).lastInsertRowid;
+      if (ch.ip) {
+        setIp.run(ch.ip, id);
+        owners.set(ch.ip, [{ id, name, nvr_id: row.id, channel: ch.channel, nvr_name: row.name }]);
+      }
       if (toGroup) toGroup.run(id, groupId);
       created.push({ id, name, slug, channel: ch.channel });
     }
   })();
 
-  audit(req, "nvr.import", { details: { nvr: row.name, count: created.length } });
-  res.status(201).json({ created: created.length, cameras: created });
+  audit(req, "nvr.import", { details: { nvr: row.name, count: created.length, skipped: skipped.length } });
+  res.status(201).json({ created: created.length, cameras: created, skipped });
 });
 
 // =============================================================================

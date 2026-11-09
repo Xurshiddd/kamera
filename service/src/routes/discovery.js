@@ -312,6 +312,17 @@ router.post("/:id(\\d+)/promote", perm, requirePerm("cameras.manage"), async (re
   if (d.camera_id) return res.status(409).json({ error: "Bu kamera allaqachon qoʻshilgan" });
   if (d.nvr_id) return res.status(400).json({ error: "Bu NVR — kanallarini «NVR qurilmalar» boʻlimidan import qiling" });
   if (!d.connected_at || !d.rtsp_path) return res.status(400).json({ error: "Avval login/parol bilan ulaning" });
+  const viaNvr = db
+    .prepare(
+      `SELECT c.name, c.channel, n.name AS nvr_name FROM cameras c JOIN nvrs n ON n.id = c.nvr_id
+       WHERE c.cam_ip = ? LIMIT 1`
+    )
+    .get(d.ip);
+  if (viaNvr) {
+    return res.status(409).json({
+      error: `Bu kamera tizimda NVR orqali bor: «${viaNvr.name}» (${viaNvr.nvr_name} · D${viaNvr.channel})`,
+    });
+  }
   const name = String(req.body?.name || "").trim();
   if (!name || name.length > 60) return res.status(400).json({ error: "Nom 1–60 belgi boʻlsin" });
 
