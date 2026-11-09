@@ -16,6 +16,7 @@ import auditRouter from "./routes/audit.js";
 import nvrsRouter from "./routes/nvrs.js";
 import liveRouter from "./routes/live.js";
 import playbackRouter from "./routes/playback.js";
+import discoveryRouter from "./routes/discovery.js";
 import { syncCameras } from "./syncCameras.js";
 import { seedRbac } from "./rbac.js";
 import { clientIpMiddleware } from "./clientIp.js";
@@ -56,6 +57,7 @@ app.use("/api", rolesRouter); // /api/roles, /api/permissions
 app.use("/api/groups", groupsRouter);
 app.use("/api/audit", auditRouter);
 app.use("/api/nvrs", nvrsRouter);
+app.use("/api/discovery", discoveryRouter); // tarmoq skaneri
 
 // Jonli efir heartbeat (NVR kameralari so'rov bo'yicha yoqiladi)
 app.use("/api", liveRouter);

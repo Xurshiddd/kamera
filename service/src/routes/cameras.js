@@ -35,7 +35,7 @@ function normalizeOrder(v) {
 export const DISPLAY_ORDER = "(sort_order IS NULL), sort_order, id";
 
 // DB qatori -> API javobi (login/parol CHIQMAYDI).
-function toApi(r) {
+export function toApi(r) {
   return {
     id: r.id,
     name: r.name,
@@ -47,6 +47,7 @@ function toApi(r) {
     nvr_name: r.nvr_name ?? null,
     channel: r.channel ?? null,
     stream: r.stream || "main",
+    source: r.source || null, // 'scan' = tarmoq skaneri orqali qo'shilgan
     // NVR'siz kamera maydonlari
     ip: r.nvr_id ? null : r.ip,
     port: r.nvr_id ? null : r.port,
@@ -55,7 +56,7 @@ function toApi(r) {
   };
 }
 
-const SELECT = `SELECT c.*, n.name AS nvr_name FROM cameras c LEFT JOIN nvrs n ON n.id = c.nvr_id`;
+export const SELECT = `SELECT c.*, n.name AS nvr_name FROM cameras c LEFT JOIN nvrs n ON n.id = c.nvr_id`;
 
 router.get("/", requirePerm("cameras.manage"), (req, res) => {
   const rows = db
@@ -83,6 +84,18 @@ function nvrFields(body) {
   if (!Number.isInteger(channel) || channel < 1 || channel > 999) return { error: "Kanal raqami noto'g'ri" };
   const stream = body.stream === "sub" ? "sub" : "main";
   return { nvr_id: nvrId, channel, stream };
+}
+
+// DB'ga yozish (MediaMTX'ga qo'shish chaqiruvchining ishi).
+export function insertCamera(camera) {
+  return db
+    .prepare(
+      `INSERT INTO cameras (name, slug, ip, port, login, parol, rtsp_path, codec, sort_order,
+         is_public, nvr_id, channel, stream, source)
+       VALUES (@name, @slug, @ip, @port, @login, @parol, @rtsp_path, @codec, @sort_order,
+         @is_public, @nvr_id, @channel, @stream, @source)`
+    )
+    .run({ source: null, ...camera });
 }
 
 // Yangi kamera qo'shish: NVR kanali (nvrId + channel) YOKI to'g'ridan IP kamera.
@@ -139,14 +152,7 @@ router.post("/", requirePerm("cameras.manage"), async (req, res) => {
     }
   }
 
-  const info = db
-    .prepare(
-      `INSERT INTO cameras (name, slug, ip, port, login, parol, rtsp_path, codec, sort_order,
-         is_public, nvr_id, channel, stream)
-       VALUES (@name, @slug, @ip, @port, @login, @parol, @rtsp_path, @codec, @sort_order,
-         @is_public, @nvr_id, @channel, @stream)`
-    )
-    .run(camera);
+  const info = insertCamera(camera);
 
   audit(req, "camera.create", { cameraId: info.lastInsertRowid, details: { name } });
   const row = db.prepare(`${SELECT} WHERE c.id = ?`).get(info.lastInsertRowid);

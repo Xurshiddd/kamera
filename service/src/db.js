@@ -132,6 +132,54 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS audit_log_created ON audit_log(created_at);
 `);
 
+// Kamera qayerdan qo'shilgan: NULL = qo'lda/NVR, 'scan' = tarmoq skaneri orqali.
+if (!db.prepare("PRAGMA table_info(cameras)").all().some((c) => c.name === "source")) {
+  db.exec("ALTER TABLE cameras ADD COLUMN source TEXT");
+}
+
+// Tarmoq skaneri topgan qurilmalar (NVR'ga ulanmagan kameralar). Ulangandan
+// keyin login/parol shu yerda saqlanadi va "kameralarga o'tkazish" mumkin.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS discovered_cameras (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    ip           TEXT NOT NULL UNIQUE,
+    ports        TEXT NOT NULL DEFAULT '[]',
+    vendor       TEXT,
+    model        TEXT,
+    hint         TEXT,
+    in_nvr       TEXT,
+    login        TEXT,
+    parol        TEXT,
+    rtsp_port    INTEGER NOT NULL DEFAULT 554,
+    rtsp_path    TEXT,
+    codec        TEXT,
+    width        INTEGER,
+    height       INTEGER,
+    connected_at TEXT,
+    camera_id    INTEGER REFERENCES cameras(id) ON DELETE SET NULL,
+    first_seen   TEXT NOT NULL DEFAULT (datetime('now')),
+    last_seen    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
+// Skaner: qurilma turi va aniq ma'lumotlar (ulanganda ISAPI'dan), qo'lda izoh.
+{
+  const dc = db.prepare("PRAGMA table_info(discovered_cameras)").all().map((c) => c.name);
+  for (const [col, def] of [
+    ["kind", "TEXT"], // camera | nvr | other | NULL (aniqlanmagan)
+    ["kind_manual", "INTEGER NOT NULL DEFAULT 0"], // 1 = foydalanuvchi belgilagan, skan o'zgartirmaydi
+    ["server", "TEXT"],
+    ["device_name", "TEXT"],
+    ["serial", "TEXT"],
+    ["mac", "TEXT"],
+    ["firmware", "TEXT"],
+    ["note", "TEXT"],
+    ["nvr_id", "INTEGER REFERENCES nvrs(id) ON DELETE SET NULL"], // NVR deb qo'shilgan bo'lsa
+  ]) {
+    if (!dc.includes(col)) db.exec(`ALTER TABLE discovered_cameras ADD COLUMN ${col} ${def}`);
+  }
+}
+
 // Migratsiya: token versiyasi. Parol almashsa oshiriladi — eski tokenlar
 // (masalan o'g'irlangan) darhol yaroqsiz bo'ladi.
 if (!db.prepare("PRAGMA table_info(users)").all().some((c) => c.name === "token_version")) {

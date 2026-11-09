@@ -2,6 +2,7 @@
 definePageMeta({ permission: "cameras.manage" });
 
 const { list, remove } = useCameras();
+const { can } = useAuth();
 const route = useRoute();
 const router = useRouter();
 
@@ -17,11 +18,41 @@ const toggle = (id: number) => {
   s.has(id) ? s.delete(id) : s.add(id);
   playing.value = s;
 };
+// Manba filtri: "" = hammasi, "nvr:<id>" = shu NVR, "manual" = NVR'siz
+// (qo'lda yoki skaner orqali), "scan" = faqat skaner orqali qo'shilganlar.
+const src = ref(typeof route.query.src === "string" ? route.query.src : "");
+const sources = computed(() => {
+  const nvrs = new Map<number, { name: string; n: number }>();
+  let manual = 0;
+  let scan = 0;
+  for (const c of cameras.value) {
+    if (c.nvr_id) {
+      const e = nvrs.get(c.nvr_id) || { name: c.nvr_name || `NVR #${c.nvr_id}`, n: 0 };
+      e.n++;
+      nvrs.set(c.nvr_id, e);
+    } else {
+      manual++;
+      if (c.source === "scan") scan++;
+    }
+  }
+  return {
+    nvrs: [...nvrs].map(([id, e]) => ({ value: `nvr:${id}`, text: `${e.name} (${e.n})` })).sort((a, b) => a.text.localeCompare(b.text)),
+    manual,
+    scan,
+  };
+});
+const bySource = (c: Camera) => {
+  if (!src.value) return true;
+  if (src.value === "manual") return !c.nvr_id;
+  if (src.value === "scan") return !c.nvr_id && c.source === "scan";
+  return src.value === `nvr:${c.nvr_id}`;
+};
 const filtered = computed(() => {
   const s = q.value.trim().toLowerCase();
-  if (!s) return cameras.value;
   return cameras.value.filter(
-    (c) => c.name.toLowerCase().includes(s) || c.slug.includes(s) || String(c.channel ?? "") === s
+    (c) =>
+      bySource(c) &&
+      (!s || c.name.toLowerCase().includes(s) || c.slug.includes(s) || String(c.channel ?? "") === s)
   );
 });
 
@@ -35,7 +66,8 @@ const pageInfo = computed(() =>
     ? `${(page.value - 1) * PER + 1}–${Math.min(page.value * PER, filtered.value.length)} / jami ${filtered.value.length}`
     : ""
 );
-watch(q, () => (page.value = 1));
+watch([q, src], () => (page.value = 1));
+watch(src, (v) => router.replace({ query: { ...route.query, src: v || undefined, page: undefined } }));
 watch(pages, (n) => {
   if (page.value > n) page.value = n;
 });
@@ -90,12 +122,23 @@ onMounted(reload);
       <div>
         <h1>Kameralar</h1>
         <p v-if="!loading && cameras.length" class="sub">
-          {{ cameras.length }} ta kamera
+          {{ filtered.length === cameras.length ? `${cameras.length} ta kamera` : `${filtered.length} / ${cameras.length} ta kamera` }}
         </p>
       </div>
       <div class="head-tools">
-        <input v-model="q" class="input search" placeholder="Nom yoki kanal…" />
+        <input v-model="q" class="input search" placeholder="Nom yoki kanal…" aria-label="Qidirish" />
+        <select v-model="src" class="input src" aria-label="Manba boʻyicha filtr">
+          <option value="">Hammasi ({{ cameras.length }})</option>
+          <optgroup v-if="sources.nvrs.length" label="NVR orqali">
+            <option v-for="o in sources.nvrs" :key="o.value" :value="o.value">{{ o.text }}</option>
+          </optgroup>
+          <optgroup label="NVR’siz">
+            <option value="manual">Qoʻlda qoʻshilgan ({{ sources.manual }})</option>
+            <option value="scan">— shundan skaner orqali ({{ sources.scan }})</option>
+          </optgroup>
+        </select>
         <NuxtLink to="/nvrs" class="btn">NVR'dan import</NuxtLink>
+        <NuxtLink v-if="can('discovery.manage')" to="/discovery" class="btn">Tarmoqdan topish</NuxtLink>
         <NuxtLink to="/add" class="btn btn-primary">+ Kamera qo'shish</NuxtLink>
       </div>
     </div>
@@ -105,6 +148,7 @@ onMounted(reload);
     <p v-else-if="!cameras.length" class="muted">
       Hali kamera yo'q. Yuqoridagi tugma orqali birinchisini qo'shing.
     </p>
+    <p v-else-if="!filtered.length" class="muted">Bu filtrda kamera yoʻq.</p>
 
     <div v-else class="grid">
       <article v-for="c in visible" :key="c.id" class="card">
@@ -122,6 +166,7 @@ onMounted(reload);
               <span v-if="c.nvr_id" class="badge badge-ok" :title="`${c.nvr_name} · kanal ${c.channel}`">
                 NVR · {{ c.channel }}
               </span>
+              <span v-else-if="c.source === 'scan'" class="badge badge-live" :title="`Tarmoq skaneri orqali · ${c.ip}`">Skaner · {{ c.ip }}</span>
               <span v-else class="slug mono">{{ c.slug }}</span>
               <span
                 v-if="c.is_public === false"
@@ -180,6 +225,10 @@ onMounted(reload);
 }
 .search {
   width: 200px;
+}
+.src {
+  width: auto;
+  max-width: 100%;
 }
 .ph {
   width: 100%;

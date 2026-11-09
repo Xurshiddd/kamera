@@ -33,6 +33,11 @@ const ACTIONS: Record<string, string> = {
   "nvr.update": "NVR'ni tahrirladi",
   "nvr.delete": "NVR'ni o'chirdi",
   "nvr.import": "NVR kanallarini import qildi",
+  "nvr.stream": "Kamera oqimini sozladi",
+  "camera.rename": "Kamera nomini o'zgartirdi",
+  "discovery.scan": "Tarmoqni skanerladi",
+  "discovery.connect": "Topilgan kameraga ulandi",
+  "discovery.delete": "Topilgan kamerani ro'yxatdan o'chirdi",
 };
 
 const { call } = useApi();

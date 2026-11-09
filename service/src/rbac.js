@@ -16,6 +16,7 @@ export const PERMISSIONS = {
   "cameras.all": "Barcha kameralarga kirish (guruhdan qat'i nazar)",
   "cameras.manage": "Kameralarni qo'shish/tahrirlash/o'chirish",
   "nvr.manage": "NVR qurilmalarini boshqarish",
+  "discovery.manage": "Tarmoqni skanerlash va topilgan kameralarga ulanish",
   "status.view": "Server holatini ko'rish",
   "users.manage": "Foydalanuvchilarni boshqarish",
   "roles.manage": "Rollar va ruxsatlarni boshqarish",

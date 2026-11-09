@@ -84,6 +84,7 @@ const form = reactive({ name: "", codec: "", res: "", bitrate: 0, fps: 0, smart:
 const detailError = ref("");
 const detailLoading = ref(false);
 const saving = ref(false);
+const savingName = ref(false);
 const saveMsg = ref("");
 const saveErr = ref("");
 const restarting = ref(false);
@@ -180,15 +181,21 @@ const changes = computed(() => {
 const hasChanges = computed(() => Object.keys(changes.value).length > 0);
 
 async function saveName() {
-  if (!sel.value?.camera_id) return;
+  if (!sel.value) return;
+  const r = sel.value;
+  const name = form.name.trim();
   saveErr.value = "";
   saveMsg.value = "";
+  savingName.value = true;
   try {
-    await call(`/api/nvrs/${nvrId.value}/channels/${sel.value.channel}/name`, { method: "PUT", body: { name: form.name } });
-    sel.value.camera_name = form.name.trim();
-    saveMsg.value = "Nom saqlandi.";
+    await call(`/api/nvrs/${nvrId.value}/channels/${r.channel}/name`, { method: "PUT", body: { name } });
+    r.name = name;
+    if (r.camera_id) r.camera_name = name;
+    saveMsg.value = r.camera_id ? "Nom NVR’da va saytda saqlandi." : "Nom NVR’da saqlandi.";
   } catch (e: any) {
     saveErr.value = e?.data?.error || "Nomni saqlab boʻlmadi.";
+  } finally {
+    savingName.value = false;
   }
 }
 
@@ -419,15 +426,19 @@ onBeforeUnmount(() => {
         </div>
 
         <div>
-          <label class="label" for="nm">Nomi (saytda)</label>
+          <label class="label" for="nm">Nomi (NVR va saytda)</label>
           <div class="name-row">
-            <input id="nm" v-model="form.name" class="input" maxlength="60" :disabled="!sel.camera_id" />
-            <button class="btn btn-soft" :disabled="!sel.camera_id || !form.name.trim() || form.name.trim() === label(sel)" @click="saveName">
-              Nomni saqlash
+            <input id="nm" v-model="form.name" class="input" maxlength="32" />
+            <button
+              class="btn btn-soft"
+              :disabled="savingName || !form.name.trim() || (form.name.trim() === sel.name && (!sel.camera_id || form.name.trim() === sel.camera_name))"
+              @click="saveName"
+            >
+              {{ savingName ? "Saqlanmoqda…" : "Nomni saqlash" }}
             </button>
           </div>
-          <p v-if="!sel.camera_id" class="hint">Bu kanal hali saytga qoʻshilmagan — «NVR qurilmalar» boʻlimidan import qiling.</p>
-          <p v-else class="hint">Masalan: 2.208-xona, 1-bino koridor</p>
+          <p v-if="!sel.camera_id" class="hint">Nom NVR’da oʻzgaradi. Bu kanal hali saytga qoʻshilmagan — «NVR qurilmalar» boʻlimidan import qilish mumkin.</p>
+          <p v-else class="hint">Masalan: 2.208-xona, 1-bino koridor. Kamera login/paroli oʻzgarmaydi.</p>
         </div>
 
         <p v-if="detailLoading" class="muted">Sozlamalar oʻqilmoqda…</p>

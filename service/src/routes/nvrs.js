@@ -2,7 +2,7 @@ import { Router } from "express";
 import db from "../db.js";
 import { requirePerm } from "../auth.js";
 import { audit } from "../rbac.js";
-import { deviceInfo, listChannels, listStreams, getStream, setStream, snapshot } from "../hikvision.js";
+import { deviceInfo, listChannels, listStreams, getStream, setStream, setChannelName, snapshot } from "../hikvision.js";
 import { stopLive } from "../live.js";
 import { makeSlug } from "./cameras.js";
 
@@ -299,17 +299,27 @@ router.put("/:id(\\d+)/channels/:ch(\\d+)/stream", manage, async (req, res) => {
   res.json({ ok: true, stream: next, restarting: true });
 });
 
-// Kanal nomi platformada (kamera qo'shilmagan bo'lsa — avval import).
-router.put("/:id(\\d+)/channels/:ch(\\d+)/name", manage, (req, res) => {
+// Kanal nomi: avval NVR'ga yoziladi (kamera login/paroli o'zgarmaydi), keyin
+// saytdagi kameraga (agar import qilingan bo'lsa). NVR xato bersa sayt ham
+// o'zgarmaydi — ikkalasi bir xil bo'lib qolsin.
+router.put("/:id(\\d+)/channels/:ch(\\d+)/name", manage, async (req, res) => {
   const row = nvrOr404(req, res);
   if (!row) return;
+  const ch = chOf(req);
   const name = String(req.body?.name || "").trim();
-  if (!name || name.length > 60) return res.status(400).json({ error: "Nom 1–60 belgi boʻlsin" });
-  const cam = db.prepare("SELECT id, name FROM cameras WHERE nvr_id = ? AND channel = ?").get(row.id, chOf(req));
-  if (!cam) return res.status(404).json({ error: "Bu kanal hali platformaga qoʻshilmagan" });
-  db.prepare("UPDATE cameras SET name = ? WHERE id = ?").run(name, cam.id);
-  audit(req, "camera.rename", { cameraId: cam.id, details: { from: cam.name, to: name } });
-  res.json({ ok: true, id: cam.id, name });
+  if (!name || name.length > 32) return res.status(400).json({ error: "Nom 1–32 belgi boʻlsin" });
+  try {
+    await setChannelName(row, ch, name);
+  } catch (e) {
+    return res.status(502).json({ error: "NVR'da nomni oʻzgartirib boʻlmadi: " + busyMsg(e) });
+  }
+  const cam = db.prepare("SELECT id, name FROM cameras WHERE nvr_id = ? AND channel = ?").get(row.id, ch);
+  if (cam) db.prepare("UPDATE cameras SET name = ? WHERE id = ?").run(name, cam.id);
+  audit(req, "camera.rename", {
+    cameraId: cam?.id ?? null,
+    details: { nvr: row.name, channel: ch, from: cam?.name ?? null, to: name },
+  });
+  res.json({ ok: true, id: cam?.id ?? null, name });
 });
 
 router.get("/:id(\\d+)/channels/:ch(\\d+)/snapshot", manage, async (req, res) => {

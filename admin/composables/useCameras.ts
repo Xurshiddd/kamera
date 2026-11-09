@@ -49,6 +49,7 @@ export interface Camera {
   nvr_name?: string | null;
   channel?: number | null;
   stream?: "main" | "sub";
+  source?: "scan" | null; // 'scan' = tarmoq skaneri orqali qo'shilgan
   hls: string;
   created_at?: string;
 }

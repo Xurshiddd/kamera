@@ -52,7 +52,11 @@ async function isapi(nvr, path, { method = "GET", body, timeout = 15000, raw = f
     o.headers.Authorization = digestHeader(nvr, method, path, parseChallenge(www));
     res = await fetch(url, o);
   }
-  if (res.status === 401) throw new Error("NVR login yoki parol noto'g'ri");
+  if (res.status === 401) {
+    const err = new Error("NVR login yoki parol noto'g'ri");
+    err.status = 401;
+    throw err;
+  }
   if (!res.ok) {
     const t = await res.text().catch(() => "");
     const sub = tag(t, "subStatusCode") || tag(t, "statusString");
@@ -81,6 +85,8 @@ export async function deviceInfo(nvr) {
     name: tag(x, "deviceName"),
     serial: tag(x, "serialNumber"),
     firmware: tag(x, "firmwareVersion"),
+    type: tag(x, "deviceType"), // "IPCamera" | "NVR" | "DVR" | ...
+    mac: tag(x, "macAddress"),
   };
 }
 
@@ -99,6 +105,23 @@ export async function listChannels(nvr) {
     ip: tag(b, "ipAddress"),
     online: online.get(Number(tag(b, "id"))) ?? null,
   }));
+}
+
+// Kanal nomini NVR'da o'zgartirish. Joriy XML olinib faqat <name> almashtiriladi.
+// GET kamera parolini qaytarmaydi, lekin PUT'da parol bo'lmasa NVR eskisini
+// saqlab qoladi (2026-11-09 da 2-kanalda sinalgan: kamera onlayn qoldi).
+const escXml = (s) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
+
+export async function setChannelName(nvr, channel, name) {
+  const path = `/ISAPI/ContentMgmt/InputProxy/channels/${channel}`;
+  const x = await isapi(nvr, path);
+  if (!/<name>[^<]*<\/name>/.test(x)) throw new Error("NVR javobida kanal nomi yo'q");
+  // Birinchi <name> — kanal nomi (sourceInputPortDescriptor'dan oldin keladi).
+  const body = x.replace(/<name>[^<]*<\/name>/, `<name>${escXml(name)}</name>`);
+  const r = await isapi(nvr, path, { method: "PUT", body, timeout: 20000 });
+  const status = tag(r, "statusString");
+  if (status && status !== "OK") throw new Error(`NVR: ${status} ${tag(r, "subStatusCode") || ""}`.trim());
 }
 
 // Kanal/oqim -> RTSP "trackID": 1-kanal asosiy oqim = 101, qo'shimcha = 102.
