@@ -76,6 +76,7 @@ const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PER))
 const visible = computed(() => filtered.value.slice((page.value - 1) * PER, page.value * PER));
 watch([q, show], () => (page.value = 1));
 const h265 = computed(() => rows.value.filter((r) => r.online && r.stream?.codec === "H.265"));
+const h264 = computed(() => rows.value.filter((r) => r.online && r.stream?.codec === "H.264"));
 
 // --- Tanlangan kamera ---
 const sel = ref<Row | null>(null);
@@ -248,26 +249,47 @@ function waitRestart(r: Row, tries = 0) {
   }, 10000);
 }
 
-// --- Hammasini H.264 ga o'tkazish ---
-const bulkAsk = ref(false);
-const bulk = reactive({ running: false, done: 0, total: 0, failed: [] as string[] });
+// --- Hammasini H.264 / H.265 ga o'tkazish ---
+// Faqat ishlayotgan va boshqa kodekdagi kameralar olinadi. Har biri uchun server
+// kamera imkoniyatlarini tekshiradi: kodekni qo'llamasa — "o'tkazib yuborildi"
+// (xato emas), imkoniyatlar o'qilmasa yoki NVR rad etsa — "o'tkazilmadi".
+type Codec = "H.264" | "H.265";
+const bulkAsk = ref<Codec | null>(null);
+const bulk = reactive({
+  running: false,
+  target: "H.264" as Codec,
+  done: 0,
+  total: 0,
+  ok: 0,
+  skipped: [] as string[],
+  failed: [] as string[],
+});
+const bulkList = (t: Codec) => (t === "H.264" ? h265.value : h264.value);
 async function runBulk() {
-  bulkAsk.value = false;
-  const list = [...h265.value];
-  Object.assign(bulk, { running: true, done: 0, total: list.length, failed: [] });
+  const target = bulkAsk.value;
+  bulkAsk.value = null;
+  if (!target) return;
+  const list = [...bulkList(target)];
+  Object.assign(bulk, { running: true, target, done: 0, total: list.length, ok: 0, skipped: [], failed: [] });
   for (const r of list) {
     try {
       const res = await call<{ stream: Stream }>(`/api/nvrs/${nvrId.value}/channels/${r.channel}/stream`, {
         method: "PUT",
-        body: { codec: "H.264" },
+        body: { codec: target },
       });
       r.stream = { ...r.stream!, ...res.stream };
+      bulk.ok++;
     } catch (e: any) {
-      bulk.failed.push(`${label(r)}: ${e?.data?.error || "xato"}`);
+      const msg = `${label(r)}: ${e?.data?.error || "xato"}`;
+      if (e?.data?.code === "unsupported") bulk.skipped.push(msg);
+      else bulk.failed.push(msg);
     }
     bulk.done++;
   }
   bulk.running = false;
+}
+function closeBulk() {
+  Object.assign(bulk, { total: 0, done: 0, ok: 0, skipped: [], failed: [] });
 }
 
 watch(nvrId, () => {
@@ -316,33 +338,79 @@ onBeforeUnmount(() => {
         <strong>{{ h265.length }} ta kamera H.265 da ishlayapti.</strong>
         Brauzerda tez ochilishi va server kam yuklanishi uchun H.264 tavsiya etiladi.
       </p>
-      <button class="btn warn-btn" @click="bulkAsk = true">Hammasini H.264 ga oʻtkazish</button>
+      <button class="btn warn-btn" @click="bulkAsk = 'H.264'">Hammasini H.264 ga oʻtkazish</button>
+    </div>
+    <!-- Barcha kameralar kodekini bir yo'la almashtirish (ikki yo'nalish) -->
+    <div v-if="rows.length" class="bulk-bar panel" aria-label="Barcha kameralar kodeki">
+      <div class="bulk-info">
+        <strong>Barcha kameralar kodeki</strong>
+        <span class="muted">
+          Ishlayotganlar: {{ h264.length }} ta H.264, {{ h265.length }} ta H.265.
+          Kodekni qoʻllamaydigan kameralar oʻzgartirilmaydi.
+        </span>
+      </div>
+      <div class="bulk-btns">
+        <button
+          class="btn"
+          :disabled="!h265.length || bulk.running || !!bulkAsk"
+          :title="h265.length ? '' : 'H.265 dagi ishlayotgan kamera yoʻq'"
+          @click="bulkAsk = 'H.264'"
+        >
+          H.265 → H.264 ({{ h265.length }})
+        </button>
+        <button
+          class="btn"
+          :disabled="!h264.length || bulk.running || !!bulkAsk"
+          :title="h264.length ? '' : 'H.264 dagi ishlayotgan kamera yoʻq'"
+          @click="bulkAsk = 'H.265'"
+        >
+          H.264 → H.265 ({{ h264.length }})
+        </button>
+      </div>
     </div>
     <div v-if="bulkAsk" class="confirm panel" role="alertdialog" aria-labelledby="bulk-t">
-      <h2 id="bulk-t">{{ h265.length }} ta kamerani H.264 ga oʻtkazasizmi?</h2>
+      <h2 id="bulk-t">{{ bulkList(bulkAsk).length }} ta kamerani {{ bulkAsk }} ga oʻtkazasizmi?</h2>
       <ul>
         <li>Har bir kamera qayta ishga tushadi: <strong>1–2 daqiqa tasvir va yozuv boʻlmaydi.</strong></li>
         <li>Ish vaqtidan tashqarida (kechqurun yoki dam olish kuni) qilish tavsiya etiladi.</li>
-        <li>H.264 diskda biroz koʻproq joy oladi — yozuvlar saqlanish muddati qisqarishi mumkin.</li>
+        <li>{{ bulkAsk }} ni qoʻllamaydigan kameralar oʻzgartirilmaydi — ular roʻyxatda alohida koʻrsatiladi.</li>
+        <template v-if="bulkAsk === 'H.264'">
+          <li>H.264 diskda biroz koʻproq joy oladi — yozuvlar saqlanish muddati qisqarishi mumkin.</li>
+        </template>
+        <template v-else>
+          <li>H.265 diskda kamroq joy oladi, lekin brauzer uni toʻgʻridan-toʻgʻri koʻrsata olmaydi.</li>
+          <li>
+            <strong>Jonli tasvir va yozuvlar serverda qayta kodlanadi</strong> — ochilishi sekinroq, server
+            protsessori ancha koʻp yuklanadi ({{ bulkList(bulkAsk).length }} ta kamera uchun).
+          </li>
+        </template>
       </ul>
       <div class="actions">
-        <button class="btn" @click="bulkAsk = false">Bekor qilish</button>
+        <button class="btn" @click="bulkAsk = null">Bekor qilish</button>
         <button class="btn btn-primary" @click="runBulk">Ha, oʻtkazish</button>
       </div>
     </div>
     <div v-if="bulk.total" class="panel">
       <strong class="bulk-title">
-        {{ bulk.running ? "H.264 ga oʻtkazilmoqda…" : "Tayyor" }} — {{ bulk.done }} / {{ bulk.total }}
+        {{ bulk.running ? `${bulk.target} ga oʻtkazilmoqda…` : "Tayyor" }} — {{ bulk.done }} / {{ bulk.total }}
       </strong>
       <div class="prog" role="progressbar" :aria-valuenow="bulk.done" aria-valuemin="0" :aria-valuemax="bulk.total">
         <div class="prog-bar" :style="{ width: `${(bulk.done / bulk.total) * 100}%` }" />
       </div>
       <p v-if="!bulk.running" class="ok-text">
-        Kameralar 1–2 daqiqada qayta ulanadi. Keyin «NVR’dan yangilash» tugmasini bosing.
+        {{ bulk.ok }} ta kamera {{ bulk.target }} ga oʻtkazildi.
+        <template v-if="bulk.ok">Ular 1–2 daqiqada qayta ulanadi. Keyin «NVR’dan yangilash» tugmasini bosing.</template>
       </p>
+      <div v-if="bulk.skipped.length" class="skip">
+        {{ bulk.target }} ni qoʻllamaydi — oʻzgartirilmadi ({{ bulk.skipped.length }}):
+        <ul><li v-for="f in bulk.skipped" :key="f">{{ f }}</li></ul>
+      </div>
       <div v-if="bulk.failed.length" class="err">
         Oʻtkazilmadi ({{ bulk.failed.length }}):
         <ul><li v-for="f in bulk.failed" :key="f">{{ f }}</li></ul>
+      </div>
+      <div v-if="!bulk.running" class="actions">
+        <button class="btn" @click="closeBulk">Yopish</button>
       </div>
     </div>
 
@@ -574,6 +642,38 @@ onBeforeUnmount(() => {
   padding-left: 22px;
   display: grid;
   gap: 6px;
+}
+.skip {
+  padding: 12px 14px;
+  color: var(--warn-ink);
+  background: var(--warn-soft);
+  border: 2px solid var(--warn-line);
+  border-radius: 10px;
+}
+.skip ul {
+  margin: 6px 0 0;
+  padding-left: 22px;
+}
+.bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-bottom: 22px;
+}
+.bulk-info {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 320px;
+}
+.bulk-info strong {
+  font-size: 19px;
+}
+.bulk-btns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 .bulk-title {
   font-size: 20px;

@@ -315,7 +315,13 @@ router.put("/:id(\\d+)/channels/:ch(\\d+)/stream", manage, async (req, res) => {
   const ch2 = {};
   // Faqat kamera qo'llaydigan qiymatlar qabul qilinadi.
   if (b.codec !== undefined) {
-    if (!caps.codecs.includes(b.codec)) return res.status(400).json({ error: "Bu kamera bu kodekni qoʻllamaydi" });
+    // Imkoniyatlar ro'yxati o'qilmasa — "qo'llamaydi" deb bo'lmaydi, alohida xato.
+    if (!caps.codecs.length) {
+      return res.status(502).json({ error: "Kamera qoʻllaydigan kodeklarni oʻqib boʻlmadi", code: "nocaps" });
+    }
+    if (!caps.codecs.includes(b.codec)) {
+      return res.status(400).json({ error: `Bu kamera ${b.codec} ni qoʻllamaydi`, code: "unsupported" });
+    }
     ch2.codec = b.codec;
   }
   if (b.width !== undefined || b.height !== undefined) {
