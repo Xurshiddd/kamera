@@ -16,9 +16,9 @@ const CAMERA_PORTS = new Set([554, 8000, 37777, 34567]);
 export const MAX_HOSTS = 2048;
 
 // --- IP yordamchilar ---
-const ipToInt = (ip) => ip.split(".").reduce((a, o) => a * 256 + Number(o), 0);
-const intToIp = (n) => [24, 16, 8, 0].map((s) => Math.floor(n / 2 ** s) % 256).join(".");
-const isIp = (s) => /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(s) && s.split(".").every((o) => Number(o) <= 255);
+export const ipToInt = (ip) => ip.split(".").reduce((a, o) => a * 256 + Number(o), 0);
+export const intToIp = (n) => [24, 16, 8, 0].map((s) => Math.floor(n / 2 ** s) % 256).join(".");
+export const isIp = (s) => /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.test(s) && s.split(".").every((o) => Number(o) <= 255);
 
 export function isPrivate(ip) {
   const [a, b] = ip.split(".").map(Number);
@@ -59,7 +59,7 @@ export function parseTargets(input) {
   return [...out];
 }
 
-function tcpOpen(ip, port, timeout = 1500) {
+export function tcpOpen(ip, port, timeout = 1500) {
   return new Promise((resolve) => {
     const s = net.connect({ host: ip, port });
     const done = (ok) => {

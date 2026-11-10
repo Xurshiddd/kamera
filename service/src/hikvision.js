@@ -38,7 +38,7 @@ function digestHeader(nvr, method, uri, ch) {
 }
 
 // ISAPI so'rovi: avval auth'siz, 401 kelsa digest bilan qaytariladi.
-async function isapi(nvr, path, { method = "GET", body, timeout = 15000, raw = false } = {}) {
+export async function isapi(nvr, path, { method = "GET", body, timeout = 15000, raw = false } = {}) {
   const url = `http://${nvr.ip}:${nvr.http_port || 80}${path}`;
   const headers = body ? { "Content-Type": "application/xml" } : {};
   const opts = () => ({ method, body, headers: { ...headers }, signal: AbortSignal.timeout(timeout) });
@@ -69,11 +69,11 @@ async function isapi(nvr, path, { method = "GET", body, timeout = 15000, raw = f
 }
 
 // --- Kichik XML yordamchilar (ISAPI javoblari oddiy, kutubxona shart emas) ---
-const tag = (xml, name) => {
+export const tag = (xml, name) => {
   const m = xml.match(new RegExp(`<${name}>([^<]*)</${name}>`));
   return m ? decodeXml(m[1]) : null;
 };
-const blocks = (xml, name) =>
+export const blocks = (xml, name) =>
   [...xml.matchAll(new RegExp(`<${name}[ >][\\s\\S]*?</${name}>`, "g"))].map((m) => m[0]);
 const decodeXml = (s) =>
   s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
@@ -110,7 +110,7 @@ export async function listChannels(nvr) {
 // Kanal nomini NVR'da o'zgartirish. Joriy XML olinib faqat <name> almashtiriladi.
 // GET kamera parolini qaytarmaydi, lekin PUT'da parol bo'lmasa NVR eskisini
 // saqlab qoladi (2026-11-09 da 2-kanalda sinalgan: kamera onlayn qoldi).
-const escXml = (s) =>
+export const escXml = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 
 export async function setChannelName(nvr, channel, name) {
@@ -120,6 +120,30 @@ export async function setChannelName(nvr, channel, name) {
   // Birinchi <name> — kanal nomi (sourceInputPortDescriptor'dan oldin keladi).
   const body = x.replace(/<name>[^<]*<\/name>/, `<name>${escXml(name)}</name>`);
   const r = await isapi(nvr, path, { method: "PUT", body, timeout: 20000 });
+  const status = tag(r, "statusString");
+  if (status && status !== "OK") throw new Error(`NVR: ${status} ${tag(r, "subStatusCode") || ""}`.trim());
+}
+
+// Kanal manbasini (kamera IP'si va/yoki paroli) NVR'da yangilash — kamera
+// IP'si yoki paroli o'zgartirilgandan keyin NVR uni yo'qotmasligi uchun.
+// Faqat sourceInputPortDescriptor ichidagi <ipAddress> va <password> almashadi.
+export async function setChannelSource(nvr, channel, { ip, password } = {}) {
+  const path = `/ISAPI/ContentMgmt/InputProxy/channels/${channel}`;
+  const x = await isapi(nvr, path);
+  const m = x.match(/<sourceInputPortDescriptor[\s\S]*?<\/sourceInputPortDescriptor>/);
+  if (!m) throw new Error("NVR javobida kanal manbasi yo'q");
+  let d = m[0];
+  if (ip) {
+    if (!/<ipAddress>[^<]*<\/ipAddress>/.test(d)) throw new Error("NVR javobida kamera IP'si yo'q");
+    d = d.replace(/<ipAddress>[^<]*<\/ipAddress>/, `<ipAddress>${escXml(ip)}</ipAddress>`);
+  }
+  if (password) {
+    const pw = `<password>${escXml(password)}</password>`;
+    if (/<password>[^<]*<\/password>/.test(d)) d = d.replace(/<password>[^<]*<\/password>/, pw);
+    else if (/<\/userName>/.test(d)) d = d.replace(/<\/userName>/, `</userName>${pw}`);
+    else d = d.replace(/<\/sourceInputPortDescriptor>$/, `${pw}</sourceInputPortDescriptor>`);
+  }
+  const r = await isapi(nvr, path, { method: "PUT", body: x.replace(m[0], d), timeout: 20000 });
   const status = tag(r, "statusString");
   if (status && status !== "OK") throw new Error(`NVR: ${status} ${tag(r, "subStatusCode") || ""}`.trim());
 }

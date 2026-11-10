@@ -192,4 +192,15 @@ if (!db.prepare("PRAGMA table_info(users)").all().some((c) => c.name === "token_
   db.exec("ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0");
 }
 
+// Kalit-qiymat sozlamalar (masalan «Kamera IP/parol» bo'limining alohida paroli).
+db.exec(`
+  CREATE TABLE IF NOT EXISTS settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+  );
+`);
+export const getSetting = (key) => db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value ?? null;
+export const setSetting = (key, value) =>
+  db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);
+
 export default db;

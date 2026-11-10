@@ -37,6 +37,16 @@ NVR      — Hikvision (ISAPI + RTSP): jonli oqim, yozuvlar, kamera sozlamalari
   ulanadi. Nom faqat saytda o'zgaradi.
 - Sanalar hamma joyda **KK.OO.YYYY** ko'rinishida.
 
+- **Kamera IP/parol** (`netconfig.manage` + bo'limning **alohida paroli**): kameralarni
+  filtr bilan tanlab, IP manzilini boshqa podsetga ko'chirish (oxirgi raqam saqlanadi yoki
+  ketma-ket) va/yoki parolini almashtirish. Har kamera uchun: joriy parol bilan ulanish →
+  yangi IP bo'shligini tekshirish → parol → IP/maska/shlyuz → yangi manzilda o'sha seriya
+  raqamli kamerani kutish → NVR kanali (IP + parol) va tizim yozuvlarini yangilash.
+  Avval «Tekshirish» (hech narsa o'zgarmaydi). Bo'lim paroli superadmin tomonidan birinchi
+  kirishda yoki `.env` dagi `NETCONFIG_PASSWORD` orqali o'rnatiladi; ochilgan bo'lim 20
+  daqiqadan keyin qulflanadi. Yangi podset routerda sozlangan va server + NVR unga yeta
+  olishi shart.
+
 ## Jonli oqim va kodek
 
 - NVR kameralari **so'rov bo'yicha** yoqiladi: kimdir ko'rayotgan bo'lsa ochiladi,

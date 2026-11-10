@@ -13,11 +13,12 @@ const adminTabs = computed(() =>
     { to: "/roles", label: "Rollar va huquqlar", perm: "roles.manage" },
     { to: "/nvrs", label: "NVR qurilmalar", perm: "nvr.manage" },
     { to: "/discovery", label: "Tarmoq skaneri", perm: "discovery.manage" },
+    { to: "/netconfig", label: "Kamera IP/parol", perm: "netconfig.manage" },
     { to: "/audit", label: "Kirishlar tarixi", perm: "audit.view" },
     { to: "/status", label: "Server holati", perm: "status.view" },
   ].filter((t) => can(t.perm))
 );
-const adminPaths = ["/users", "/nvr-cameras", "/admin", "/add", "/edit", "/groups", "/roles", "/nvrs", "/discovery", "/audit", "/status"];
+const adminPaths = ["/users", "/nvr-cameras", "/admin", "/add", "/edit", "/groups", "/roles", "/nvrs", "/discovery", "/netconfig", "/audit", "/status"];
 const inAdmin = computed(() => adminPaths.some((p) => route.path === p || route.path.startsWith(p + "/")));
 
 // Asosiy menyu: 3 ta katta bo'lim.

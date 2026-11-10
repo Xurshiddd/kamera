@@ -17,6 +17,7 @@ export const PERMISSIONS = {
   "cameras.manage": "Kameralarni qo'shish/tahrirlash/o'chirish",
   "nvr.manage": "NVR qurilmalarini boshqarish",
   "discovery.manage": "Tarmoqni skanerlash va topilgan kameralarga ulanish",
+  "netconfig.manage": "Kameralar IP manzili va parolini ommaviy oʻzgartirish (alohida parol bilan)",
   "status.view": "Server holatini ko'rish",
   "users.manage": "Foydalanuvchilarni boshqarish",
   "roles.manage": "Rollar va ruxsatlarni boshqarish",
