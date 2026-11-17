@@ -205,7 +205,10 @@ function submit() {
     </div>
     <p v-if="badField === 'parol' && fieldMsg" id="cf-parol-err" class="field-err" role="alert">{{ fieldMsg }}</p>
     <p v-if="mode === 'edit' && initial?.auth_blocked && !check.ok" class="field-err" role="alert">
-      Kamera hozirgi saqlangan parolni rad etgan — bloklanmasligi uchun oqim 30 daqiqaga toʻxtatilgan. Toʻgʻri parolni kiriting, «Ulanishni tekshirish»ni bosing va saqlang.
+      Kamera saqlangan parolni rad etgan (yoki oʻsha paytda vaqtincha bloklangan edi) — oqim 30 daqiqaga toʻxtatilgan. Toʻgʻri parolni kiriting, «Ulanishni tekshirish»ni bosing va <strong>Saqlash</strong>ni bosing.
+    </p>
+    <p v-if="mode === 'edit' && initial?.auth_blocked && check.ok" class="hint" role="status">
+      Parol toʻgʻri. Endi <strong>Saqlash</strong>ni bosing — oqim darhol qayta ishga tushadi.
     </p>
 
     <div>

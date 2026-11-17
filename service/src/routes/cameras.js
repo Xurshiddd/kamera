@@ -227,8 +227,10 @@ router.put("/:id(\\d+)", requirePerm("cameras.manage"), async (req, res) => {
     });
     const connChanged = ["ip", "port", "login", "parol", "rtsp_path"].some((k) => camera[k] !== row[k]);
     // Faqat nom/tartib/ochiqlik o'zgarsa kameraga qayta ulanmaymiz (ortiqcha
-    // login urinishlari yo'q, oqim uzilmaydi).
-    if (connChanged) {
+    // login urinishlari yo'q, oqim uzilmaydi). Lekin oqim 401 tufayli kutishda
+    // bo'lsa (kamera vaqtincha bloklangan, parol aslida to'g'ri bo'lishi mumkin),
+    // saqlash oqimni qayta ishga tushiradi.
+    if (connChanged || authBlocked(row.slug)) {
       // Avval eski ffmpeg'ni to'xtatamiz — kamera ulanishi bo'shasin (ko'p
       // kameralar bir vaqtda 1-2 ta RTSP mijozgagina ruxsat beradi), keyin
       // bir marta ulanib tekshiramiz va kodekni aniqlaymiz.
