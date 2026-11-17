@@ -18,6 +18,8 @@ export const PERMISSIONS = {
   "nvr.manage": "NVR qurilmalarini boshqarish",
   "discovery.manage": "Tarmoqni skanerlash va topilgan kameralarga ulanish",
   "netconfig.manage": "Kameralar IP manzili va parolini ommaviy oʻzgartirish (alohida parol bilan)",
+  "topology.view": "Tarmoq sxemasini (switch va kameralar ulanishi) ko'rish",
+  "topology.manage": "Tarmoq sxemasini tahrirlash (switchlar, portlar)",
   "status.view": "Server holatini ko'rish",
   "users.manage": "Foydalanuvchilarni boshqarish",
   "roles.manage": "Rollar va ruxsatlarni boshqarish",

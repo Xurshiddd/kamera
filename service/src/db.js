@@ -199,6 +199,40 @@ db.exec(`
     value TEXT
   );
 `);
+// Tarmoq sxemasi (topologiya): switch/router/NVR qurilmalari va ular orasidagi
+// ketma-ketlik (parent_id + port), hamda qaysi kamera qaysi switchning qaysi
+// portiga ulangani. Switchlar boshqarilmaydigan (SNMP yo'q) — ma'lumot qo'lda.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS net_devices (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    kind        TEXT NOT NULL DEFAULT 'switch', -- router | switch | poe_switch | nvr | other
+    model       TEXT,
+    ip          TEXT,
+    location    TEXT,
+    ports       INTEGER,
+    parent_id   INTEGER REFERENCES net_devices(id) ON DELETE SET NULL,
+    parent_port INTEGER, -- ota qurilmaning qaysi portiga ulangan
+    uplink_port INTEGER, -- shu qurilmaning qaysi porti otaga ketadi
+    note        TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS camera_links (
+    camera_id INTEGER PRIMARY KEY REFERENCES cameras(id) ON DELETE CASCADE,
+    device_id INTEGER NOT NULL REFERENCES net_devices(id) ON DELETE CASCADE,
+    port      INTEGER
+  );
+  -- NVR jurnalidagi kamera uzilishlari (switch'larni taxmin qilish uchun).
+  -- Vaqt NVR'ning mahalliy vaqti, "YYYY-MM-DDTHH:MM:SS".
+  CREATE TABLE IF NOT EXISTS nvr_disconnects (
+    nvr_id  INTEGER NOT NULL REFERENCES nvrs(id) ON DELETE CASCADE,
+    channel INTEGER NOT NULL,
+    t       TEXT NOT NULL,
+    ip      TEXT,
+    PRIMARY KEY (nvr_id, channel, t)
+  ) WITHOUT ROWID;
+`);
+
 export const getSetting = (key) => db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value ?? null;
 export const setSetting = (key, value) =>
   db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, value);

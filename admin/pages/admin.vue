@@ -98,8 +98,18 @@ async function onDelete(c: Camera) {
   await reload();
 }
 
+// STREAM_BASE nisbiy (/hls) bo'lishi mumkin — nusxa/ko'rsatish uchun to'liq
+// manzilga aylantiramiz (qaysi host orqali kirilgan bo'lsa, o'sha).
+function absUrl(u: string) {
+  try {
+    return new URL(u, location.href).href;
+  } catch {
+    return u;
+  }
+}
+
 async function copy(c: Camera) {
-  if (await copyText(c.hls)) {
+  if (await copyText(absUrl(c.hls))) {
     copiedId.value = c.id;
     setTimeout(() => {
       if (copiedId.value === c.id) copiedId.value = null;
@@ -205,7 +215,7 @@ onMounted(reload);
 
         <div class="url-row">
           <span class="tag">HLS</span>
-          <input class="input mono url-input" :value="c.hls" readonly @focus="($event.target as HTMLInputElement).select()" />
+          <input class="input mono url-input" :value="absUrl(c.hls)" readonly @focus="($event.target as HTMLInputElement).select()" />
           <button class="btn btn-sm" :class="{ copied: copiedId === c.id }" @click="copy(c)">
             {{ copiedId === c.id ? "✓ Nusxalandi" : "Nusxa" }}
           </button>

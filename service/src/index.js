@@ -18,6 +18,7 @@ import liveRouter from "./routes/live.js";
 import playbackRouter from "./routes/playback.js";
 import discoveryRouter from "./routes/discovery.js";
 import netconfigRouter from "./routes/netconfig.js";
+import topologyRouter from "./routes/topology.js";
 import { syncCameras } from "./syncCameras.js";
 import { seedRbac } from "./rbac.js";
 import { clientIpMiddleware } from "./clientIp.js";
@@ -59,7 +60,8 @@ app.use("/api/groups", groupsRouter);
 app.use("/api/audit", auditRouter);
 app.use("/api/nvrs", nvrsRouter);
 app.use("/api/discovery", discoveryRouter); // tarmoq skaneri
-app.use("/api/netconfig", netconfigRouter); // kameralar IP/parolini ommaviy o'zgartirish
+app.use("/api/netconfig", netconfigRouter);
+app.use("/api/topology", topologyRouter); // tarmoq sxemasi (switch -> kamera) // kameralar IP/parolini ommaviy o'zgartirish
 
 // Jonli efir heartbeat (NVR kameralari so'rov bo'yicha yoqiladi)
 app.use("/api", liveRouter);
