@@ -5,6 +5,7 @@ const props = defineProps<{
   initial?: Partial<CameraDetail>;
   saving?: boolean;
   error?: string;
+  errorField?: string; // serverdan: "parol" | "rtspPath" — maydon yonida ko'rsatish
 }>();
 const emit = defineEmits<{ (e: "submit", payload: NewCamera): void }>();
 
@@ -53,6 +54,41 @@ const brand = ref<"hikvision" | "dahua" | "custom">(detectBrand(form.rtspPath));
 
 const localError = ref("");
 
+const currentPath = () => (brand.value === "custom" ? form.rtspPath : rtspByBrand[brand.value]);
+
+// «Ulanishni tekshirish»: saqlamasdan kameraga bir marta ulanib ko'radi.
+const check = reactive({ busy: false, ok: false, msg: "", field: "" });
+async function checkConn() {
+  Object.assign(check, { ok: false, msg: "", field: "" });
+  const pwKnown = form.parol || (props.mode === "edit" && props.initial?.id);
+  if (!form.ip || !form.login || !pwKnown) {
+    Object.assign(check, { msg: "IP, login va parolni kiriting.", field: "parol" });
+    return;
+  }
+  check.busy = true;
+  try {
+    const r = await call<{ message: string }>("/api/cameras/check", {
+      method: "POST",
+      body: {
+        id: props.mode === "edit" ? props.initial?.id : undefined,
+        ip: form.ip, port: Number(form.port) || 554, login: form.login, parol: form.parol, rtspPath: currentPath(),
+      },
+    });
+    Object.assign(check, { ok: true, msg: r.message });
+  } catch (e: any) {
+    Object.assign(check, { msg: e?.data?.error || "Tekshirib boʻlmadi.", field: e?.data?.field || "" });
+  } finally {
+    check.busy = false;
+  }
+}
+// Maydon o'zgarsa eski natija endi to'g'ri emas.
+watch(() => [form.ip, form.port, form.login, form.parol, brand.value, form.rtspPath], () => {
+  if (!check.busy) Object.assign(check, { ok: false, msg: "", field: "" });
+});
+// Qaysi maydon xato: tekshiruv natijasi yoki saqlashdagi server javobi.
+const badField = computed(() => check.field || props.errorField || "");
+const fieldMsg = computed(() => (check.field ? check.msg : props.errorField ? props.error : ""));
+
 function submit() {
   localError.value = "";
   const common = {
@@ -86,7 +122,7 @@ function submit() {
     port: Number(form.port) || 554,
     login: form.login,
     parol: form.parol,
-    rtspPath: brand.value === "custom" ? form.rtspPath : rtspByBrand[brand.value],
+    rtspPath: currentPath(),
     order: form.order === "" || form.order === null ? null : Number(form.order),
     isPublic: form.isPublic,
   });
@@ -140,7 +176,7 @@ function submit() {
     <div class="row">
       <div style="flex: 2">
         <label class="label">Kamera IP</label>
-        <input v-model="form.ip" class="input" placeholder="192.168.1.64" />
+        <input v-model="form.ip" class="input" :class="{ 'input-bad': badField === 'ip' }" placeholder="192.168.1.64" />
       </div>
       <div style="flex: 1">
         <label class="label">Port</label>
@@ -154,15 +190,23 @@ function submit() {
         <input v-model="form.login" class="input" placeholder="admin" />
       </div>
       <div style="flex: 1">
-        <label class="label">Parol</label>
+        <label class="label" for="cf-parol">Parol</label>
         <input
+          id="cf-parol"
           v-model="form.parol"
           class="input"
+          :class="{ 'input-bad': badField === 'parol' }"
           type="password"
+          :aria-invalid="badField === 'parol'"
+          :aria-describedby="badField === 'parol' ? 'cf-parol-err' : undefined"
           :placeholder="mode === 'edit' ? 'Oʼzgartirmaslik uchun boʼsh qoldiring' : ''"
         />
       </div>
     </div>
+    <p v-if="badField === 'parol' && fieldMsg" id="cf-parol-err" class="field-err" role="alert">{{ fieldMsg }}</p>
+    <p v-if="mode === 'edit' && initial?.auth_blocked && !check.ok" class="field-err" role="alert">
+      Kamera hozirgi saqlangan parolni rad etgan — bloklanmasligi uchun oqim 30 daqiqaga toʻxtatilgan. Toʻgʻri parolni kiriting, «Ulanishni tekshirish»ni bosing va saqlang.
+    </p>
 
     <div>
       <label class="label">Kamera brendi</label>
@@ -175,9 +219,19 @@ function submit() {
 
     <div v-if="brand === 'custom'">
       <label class="label">RTSP yo'li</label>
-      <input v-model="form.rtspPath" class="input mono" placeholder="Streaming/Channels/101" />
+      <input v-model="form.rtspPath" class="input mono" :class="{ 'input-bad': badField === 'rtspPath' }" placeholder="Streaming/Channels/101" />
     </div>
     <p v-else class="hint mono">RTSP yo'li: {{ rtspByBrand[brand] }}</p>
+    <p v-if="(badField === 'rtspPath' || badField === 'ip') && fieldMsg" class="field-err" role="alert">{{ fieldMsg }}</p>
+
+    <div class="checkrow">
+      <button type="button" class="btn" :disabled="check.busy || saving" @click="checkConn">
+        {{ check.busy ? "Ulanmoqda…" : "Ulanishni tekshirish" }}
+      </button>
+      <span v-if="check.ok" class="ok-msg" role="status">✓ {{ check.msg }}</span>
+      <span v-else-if="check.msg && !check.field" class="field-err">{{ check.msg }}</span>
+    </div>
+    <p class="hint">Saqlashdan oldin kameraga bir marta ulanib koʻradi. Parol notoʻgʻri boʻlsa kamera saqlanmaydi — koʻp xato urinishda kamera bloklanadi.</p>
     </template>
 
     <div>
@@ -205,7 +259,8 @@ function submit() {
       </p>
     </div>
 
-    <p v-if="localError || error" class="err">{{ localError || error }}</p>
+    <p v-if="localError || (error && !errorField)" class="err">{{ localError || error }}</p>
+    <p v-else-if="errorField && error" class="err">Kamera saqlanmadi — yuqoridagi xatoni tuzating.</p>
 
     <div class="actions">
       <NuxtLink to="/admin" class="btn">Bekor qilish</NuxtLink>
@@ -223,6 +278,10 @@ function submit() {
 </template>
 
 <style scoped>
+.input-bad { border-color: var(--danger, #dc2626); box-shadow: 0 0 0 1px var(--danger, #dc2626); }
+.field-err { margin: -6px 0 0; color: var(--danger-ink, #b91c1c); font-weight: 600; }
+.ok-msg { color: var(--ok-ink, #15803d); font-weight: 600; }
+.checkrow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .form {
   display: grid;
   gap: 16px;

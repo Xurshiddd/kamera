@@ -18,7 +18,7 @@ import db, { getSetting, setSetting } from "../db.js";
 import { requirePerm } from "../auth.js";
 import { audit, hashPassword, verifyPassword, SUPERADMIN } from "../rbac.js";
 import { listChannels, setChannelSource } from "../hikvision.js";
-import { isIp, isPrivate } from "../scanner.js";
+import { isIp, isPrivate, parseTargets, scan, tcpOpen } from "../scanner.js";
 import { stopLive } from "../live.js";
 import { addPath, deletePath } from "../mediamtx.js";
 import {
@@ -121,7 +121,20 @@ router.post("/password", requireUnlock, (req, res) => {
 // --- Qurilmalar ro'yxati (IP bo'yicha: bitta kamera bir nechta NVR'da bo'lishi mumkin) ---
 const ipKey = (ip) => ip.split(".").reduce((a, o) => a * 256 + Number(o), 0);
 
-async function buildDevices() {
+// NVR'siz qurilmalarning onlayn holati: HTTP/RTSP/SDK portlaridan biri ochiqmi.
+async function probeOnline(list) {
+  let i = 0;
+  const worker = async () => {
+    while (i < list.length) {
+      const d = list[i++];
+      const r = await Promise.all([80, 554, 8000].map((p) => tcpOpen(d.ip, p, 900)));
+      d.online = r.some(Boolean);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(32, list.length) }, worker));
+}
+
+async function buildDevices({ probe = false } = {}) {
   const map = new Map();
   const warnings = [];
   const get = (ip) => {
@@ -157,18 +170,22 @@ async function buildDevices() {
     d.direct = { id: c.id, name: c.name };
     d.name ||= c.name;
   }
+  // Skaner topgan / qo'lda qo'shilgan qurilmalar: NVR yoki "boshqa" deb
+  // belgilanganlardan tashqari hammasi (ulanmagan bo'lsa ham).
   for (const r of db
     .prepare(
-      `SELECT id, ip, device_name, note FROM discovered_cameras
-       WHERE camera_id IS NULL AND nvr_id IS NULL AND (kind = 'camera' OR (kind IS NULL AND connected_at IS NOT NULL))`
+      `SELECT id, ip, device_name, note, camera_id, connected_at FROM discovered_cameras
+       WHERE nvr_id IS NULL AND (kind IS NULL OR kind = 'camera')`
     )
     .all()) {
+    if (!isIp(r.ip)) continue;
     const d = get(r.ip);
-    d.discovered = { id: r.id };
+    d.discovered = { id: r.id, removable: !r.camera_id && !r.connected_at };
     d.name ||= r.note || r.device_name || null;
   }
   for (const ip of nvrIps) map.delete(ip);
   const devices = [...map.values()].sort((a, b) => ipKey(a.ip) - ipKey(b.ip));
+  if (probe) await probeOnline(devices.filter((d) => !d.nvr.length));
   return { devices, warnings, nvrIps };
 }
 
@@ -187,11 +204,93 @@ function savedCreds(d) {
 }
 
 router.get("/devices", requireUnlock, async (req, res) => {
-  const { devices, warnings } = await buildDevices();
+  const { devices, warnings } = await buildDevices({ probe: true });
   res.json({
     devices: devices.map((d) => ({ ...d, saved_creds: savedCreds(d).length > 0 })),
     warnings,
   });
+});
+
+// Tizimda yo'q kameralarni ro'yxatga qo'shish: IP, oraliq yoki tarmoq
+// ("192.168.30.10-60, 192.168.31.0/24"). Kamera portlari ochiq hostlar
+// discovered_cameras'ga yoziladi (skaner sahifasida ham ko'rinadi).
+const ADD_MAX_HOSTS = 512;
+router.post("/devices/add", requireUnlock, async (req, res) => {
+  if (job?.running) return res.status(409).json({ error: "Vazifa bajarilayotganda qoʻshib boʻlmaydi" });
+  let ips;
+  try {
+    ips = parseTargets(req.body?.targets);
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  if (ips.length > ADD_MAX_HOSTS) return res.status(400).json({ error: `Bir martada ${ADD_MAX_HOSTS} tadan koʻp manzil boʻlmasin` });
+  const note = String(req.body?.note || "").trim().slice(0, 120) || null;
+
+  // Ro'yxatda allaqachon bor (NVR kanali yoki tizimdagi kamera) manzillar
+  // qayta yozilmaydi — ular shundoq ham tanlanadi.
+  const { devices: known, nvrIps } = await buildDevices();
+  const listed = new Map(known.filter((d) => d.nvr.length || d.direct).map((d) => [d.ip, d]));
+  const direct = new Map(db.prepare("SELECT id, ip FROM cameras WHERE nvr_id IS NULL AND ip != ''").all().map((c) => [c.ip, c.id]));
+  const skipped = [];
+  for (const ip of ips) {
+    if (nvrIps.has(ip)) skipped.push({ ip, reason: "NVR manzili" });
+    else if (listed.has(ip)) skipped.push({ ip, reason: listed.get(ip).nvr.length ? "allaqachon roʻyxatda (NVR orqali)" : "allaqachon roʻyxatda (tizimda)" });
+  }
+  const skipSet = new Set(skipped.map((s) => s.ip));
+  const toScan = ips.filter((ip) => !skipSet.has(ip));
+  const found = await scan(toScan, { concurrency: 64 });
+
+  const exists = db.prepare("SELECT id, kind, kind_manual, nvr_id FROM discovered_cameras WHERE ip = ?");
+  const ins = db.prepare(
+    `INSERT INTO discovered_cameras (ip, ports, vendor, model, hint, server, kind, kind_manual, note, camera_id)
+     VALUES (@ip, @ports, @vendor, @model, @hint, @server, 'camera', 1, @note, @camera_id)`
+  );
+  const upd = db.prepare(
+    `UPDATE discovered_cameras SET ports=@ports, vendor=COALESCE(@vendor, vendor), model=COALESCE(@model, model),
+       hint=COALESCE(@hint, hint), server=COALESCE(@server, server), kind='camera', kind_manual=1,
+       note=COALESCE(@note, note), camera_id=COALESCE(camera_id, @camera_id), last_seen=datetime('now')
+     WHERE id=@id`
+  );
+  let added = 0;
+  let updated = 0;
+  db.transaction(() => {
+    for (const d of found) {
+      const row = {
+        ip: d.ip, ports: JSON.stringify(d.ports), vendor: d.vendor ?? null, model: d.model ?? null,
+        hint: d.hint ?? null, server: d.server ?? null, note, camera_id: direct.get(d.ip) ?? null,
+      };
+      const old = exists.get(d.ip);
+      // NVR'ga o'xshasa (va foydalanuvchi kamera deb belgilamagan bo'lsa) qo'shmaymiz.
+      if (old?.nvr_id || (d.kind === "nvr" && !(old?.kind_manual && old?.kind === "camera"))) {
+        skipped.push({ ip: d.ip, reason: "NVR/DVR qurilmasiga oʻxshaydi" });
+        continue;
+      }
+      if (old) {
+        upd.run({ ...row, id: old.id });
+        updated++;
+      } else {
+        ins.run(row);
+        added++;
+      }
+    }
+  })();
+  const foundIps = new Set(found.map((d) => d.ip));
+  const silent = toScan.filter((ip) => !foundIps.has(ip));
+  audit(req, "netconfig.add_devices", { details: { targets: String(req.body?.targets || "").slice(0, 200), hosts: ips.length, added, updated } });
+  res.json({ hosts: ips.length, found: found.length, added, updated, skipped, silent: silent.length <= 20 ? silent : silent.length });
+});
+
+// Qo'lda qo'shilgan qurilmani ro'yxatdan olib tashlash (faqat tizimga ulanmagan
+// skaner yozuvi; kameraning o'ziga tegilmaydi).
+router.delete("/devices/:ip", requireUnlock, (req, res) => {
+  const ip = String(req.params.ip);
+  if (!isIp(ip)) return res.status(400).json({ error: "IP notoʻgʻri" });
+  const r = db
+    .prepare("DELETE FROM discovered_cameras WHERE ip = ? AND camera_id IS NULL AND nvr_id IS NULL AND connected_at IS NULL")
+    .run(ip);
+  if (!r.changes) return res.status(404).json({ error: "Bu qurilmani roʻyxatdan olib boʻlmaydi (tizimga ulangan yoki yoʻq)" });
+  audit(req, "netconfig.remove_device", { details: { ip } });
+  res.json({ ok: true });
 });
 
 // =============================================================================

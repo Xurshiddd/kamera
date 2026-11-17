@@ -9,6 +9,7 @@ const camera = ref<CameraDetail | null>(null);
 const loadError = ref("");
 const saving = ref(false);
 const error = ref("");
+const errorField = ref("");
 
 onMounted(async () => {
   try {
@@ -20,12 +21,14 @@ onMounted(async () => {
 
 async function submit(payload: NewCamera) {
   error.value = "";
+  errorField.value = "";
   saving.value = true;
   try {
     await update(route.params.id as string, payload);
     router.push("/admin");
   } catch (e: any) {
     error.value = e?.data?.error || "Saqlashda xatolik (service ulanmadi?).";
+    errorField.value = e?.data?.field || "";
   } finally {
     saving.value = false;
   }
@@ -51,6 +54,7 @@ async function submit(payload: NewCamera) {
       :initial="camera"
       :saving="saving"
       :error="error"
+      :error-field="errorField"
       @submit="submit"
     />
     <p v-else class="muted">Yuklanmoqda…</p>

@@ -4,8 +4,11 @@
 
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import fs from "node:fs";
+import path from "node:path";
 import db from "./db.js";
 import { liveUrl } from "./hikvision.js";
+import { probe } from "./scanner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -41,6 +44,23 @@ export async function probeCodec(camera) {
   }
 }
 
+// Kameraga BIR MARTA ulanib ko'rish (saqlashdan oldin): login/parol, yo'l va kodek.
+// Qaytaradi: { ok:true, codec } | { ok:false, reason: "auth"|"path"|"down" }.
+export async function checkCamera(camera) {
+  return probe(buildRtspSource(camera));
+}
+
+// cam-run.sh 401 olganda qo'yadigan belgi: kamera parolni rad etgan, oqim
+// bloklanmaslik uchun kutyapti. Yo'l qayta yaratilganda skript belgini o'chiradi.
+const GUARD_DIR = path.join(process.env.HLS_DIR || "/hls", ".guard");
+export function authBlocked(slug) {
+  try {
+    return fs.existsSync(path.join(GUARD_DIR, slug));
+  } catch {
+    return false;
+  }
+}
+
 // RTSP manzilini login/parol bilan yasaymiz.
 // Diqqat: bu manzil faqat server ichida qoladi, tashqariga CHIQMAYDI.
 // NVR kamerasi bo'lsa (nvr_id) — manba NVR kanali (Streaming/Channels/{ch}01).
@@ -66,7 +86,10 @@ function buildTranscodeCmd(camera) {
   const out = `rtsp://localhost:8554/${camera.slug}`;
 
   // +genpts: buzuq timestamp'larni qayta hosil qilamiz (HLS "gap"ni oldini oladi).
-  const input = `-rtsp_transport tcp -fflags +genpts -i "${source}"`;
+  // -nostats: progress qatorlari yo'q (cam-run.sh loglarni qatorma-qator o'qiydi).
+  const input = `-nostats -rtsp_transport tcp -fflags +genpts -i "${source}"`;
+  // cam-run.sh: kamera parolni rad etsa (401) uzoq kutadi — kamera bloklanmasin.
+  const ffmpeg = `sh /cam-run.sh ${camera.slug} ffmpeg`;
   // Ovoz: kamera G.711 -> AAC (HLS + barcha brauzerlar uchun). Ovoz bo'lmasa zararsiz.
   const audio = `-c:a aac -b:a 128k -ar 48000`;
   // MediaMTX'ga qayta nashrni TCP orqali qilamiz. UDP (default)'da ko'p kamera
@@ -79,7 +102,7 @@ function buildTranscodeCmd(camera) {
   // Segment uzunligini kamera keyframe oralig'i belgilaydi, shuning uchun
   // kamerada I-Frame Interval ~ 2x fps bo'lsin (12fps -> 24, 15fps -> 30).
   if (camera.codec === "h264") {
-    return `ffmpeg ${input} -c:v copy ${audio} ${output}`;
+    return `${ffmpeg} ${input} -c:v copy ${audio} ${output}`;
   }
 
   // --- H265 (yoki kodek noma'lum) -> H264 ga transkod (CPU, libx264) ---
@@ -91,7 +114,7 @@ function buildTranscodeCmd(camera) {
 
   // zerolatency: lookahead/B-kadrlarsiz (jonli efir uchun past kechikish).
   return (
-    `ffmpeg ${input} -vf scale=-2:${HEIGHT} ` +
+    `${ffmpeg} ${input} -vf scale=-2:${HEIGHT} ` +
     `-c:v libx264 -preset veryfast -tune zerolatency -profile:v high ${rate} ` +
     `${gop} ${audio} ${output}`
   );

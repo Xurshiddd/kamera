@@ -14,6 +14,7 @@ interface StreamRow {
   readers: number;
   bytesReceived: number;
   since: string | null;
+  auth_blocked?: boolean;
 }
 interface Status {
   server: {
@@ -181,6 +182,12 @@ const liveCount = computed(
                   <span class="live" :class="c.ready ? 'live-on' : 'live-off'">
                     <i />{{ c.ready ? "Jonli" : "O'chiq" }}
                   </span>
+                  <NuxtLink
+                    v-if="c.auth_blocked"
+                    :to="`/edit/${c.id}`"
+                    class="badge badge-danger"
+                    title="Kamera login/parolni rad etdi. Bloklanmasligi uchun 30 daqiqa qayta urinilmaydi — toʻgʻri parolni kiriting."
+                  >Parol notoʻgʻri</NuxtLink>
                 </td>
                 <td>{{ c.ready ? sinceDur(c.since) : "—" }}</td>
                 <td>{{ c.readers }}</td>

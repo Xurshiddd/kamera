@@ -10,7 +10,7 @@ interface Device {
   name: string | null;
   nvr: NvrRef[];
   direct: { id: number; name: string } | null;
-  discovered: { id: number } | null;
+  discovered: { id: number; removable: boolean } | null;
   online: boolean | null;
   saved_creds: boolean;
 }
@@ -167,9 +167,34 @@ async function loadDevices() {
 const subnet = (ip: string) => ip.replace(/\.\d+$/, "");
 const building = (d: Device) => (d.name?.match(/^\s*(\d+)\s*\./) || [])[1] || "";
 const where = (d: Device) =>
-  [...d.nvr.map((n) => `${n.nvr_name} · D${n.channel}`), d.direct ? "toʻgʻridan" : "", d.discovered ? "skaner" : ""].filter(Boolean).join(", ");
+  [...d.nvr.map((n) => `${n.nvr_name} · D${n.channel}`), d.direct ? "toʻgʻridan" : "", d.discovered ? "skaner/qoʻlda" : ""].filter(Boolean).join(", ");
+
+// Tizimda yo'q kameralarni ro'yxatga qo'shish (IP / oraliq / tarmoq).
+const add = reactive({ open: false, targets: "", note: "", busy: false, err: "", res: null as any });
+async function addDevices() {
+  add.err = "";
+  add.res = null;
+  add.busy = true;
+  try {
+    add.res = await nc("/devices/add", { method: "POST", body: { targets: add.targets, note: add.note } });
+    await loadDevices();
+  } catch (e: any) {
+    add.err = e?.data?.error || "Qoʻshib boʻlmadi.";
+  } finally {
+    add.busy = false;
+  }
+}
+async function removeDevice(d: Device) {
+  try {
+    await nc(`/devices/${encodeURIComponent(d.ip)}`, { method: "DELETE" });
+    await loadDevices();
+  } catch (e: any) {
+    listErr.value = e?.data?.error || "Olib tashlab boʻlmadi.";
+  }
+}
 
 const q = ref("");
+const fSrc = ref<"" | "nvr" | "direct" | "discovered">("");
 const fNvr = ref<string>("");
 const fNet = ref<string>("");
 const fBld = ref<string>("");
@@ -186,6 +211,9 @@ const buildings = computed(() =>
 const filtered = computed(() => {
   const s = q.value.trim().toLowerCase();
   return devices.value.filter((d) => {
+    if (fSrc.value === "nvr" && !d.nvr.length) return false;
+    if (fSrc.value === "direct" && !d.direct) return false;
+    if (fSrc.value === "discovered" && !d.discovered) return false;
     if (fNvr.value === "none" && d.nvr.length) return false;
     if (fNvr.value && fNvr.value !== "none" && !d.nvr.some((n) => String(n.nvr_id) === fNvr.value)) return false;
     if (fNet.value && subnet(d.ip) !== fNet.value) return false;
@@ -200,7 +228,12 @@ const PER = 25;
 const page = ref(1);
 const pages = computed(() => Math.max(1, Math.ceil(filtered.value.length / PER)));
 const visible = computed(() => filtered.value.slice((page.value - 1) * PER, page.value * PER));
-watch([q, fNvr, fNet, fBld, fState], () => (page.value = 1));
+watch([q, fSrc, fNvr, fNet, fBld, fState], () => (page.value = 1));
+const srcCount = computed(() => ({
+  nvr: devices.value.filter((d) => d.nvr.length).length,
+  direct: devices.value.filter((d) => d.direct).length,
+  discovered: devices.value.filter((d) => d.discovered).length,
+}));
 watch(pages, (n) => page.value > n && (page.value = n));
 
 // Tanlash (IP bo'yicha)
@@ -484,10 +517,35 @@ const ipChanges = computed(() => selList.value.filter((d) => newIpOf(d.ip) && ne
         <section class="panel">
           <div class="jobhead">
             <h2>Kameralar <span class="muted small">({{ devices.length }})</span></h2>
-            <button class="btn btn-sm" :disabled="loading" @click="loadDevices">{{ loading ? "Yuklanmoqda…" : "Yangilash" }}</button>
+            <div class="actions">
+              <button class="btn btn-sm btn-soft" :aria-expanded="add.open" @click="add.open = !add.open">+ Roʻyxatga qoʻshish</button>
+              <button class="btn btn-sm" :disabled="loading" @click="loadDevices">{{ loading ? "Yuklanmoqda…" : "Yangilash" }}</button>
+            </div>
+          </div>
+          <div v-if="add.open" class="addbox">
+            <p class="hint">Tizimga (NVR yoki kameralar roʻyxatiga) qoʻshilmagan kameralar ham shu yerda oʻzgartiriladi. IP, oraliq yoki tarmoq kiriting — kamera portlari ochiq qurilmalar roʻyxatga tushadi.</p>
+            <div class="addrow">
+              <div><label class="label" for="at">Manzillar</label><input id="at" v-model="add.targets" class="input mono" placeholder="192.168.30.28, 192.168.30.10-60, 192.168.31.0/24" @keydown.enter.prevent="add.targets && !add.busy && addDevices()" /></div>
+              <div><label class="label" for="an">Izoh (ixtiyoriy)</label><input id="an" v-model="add.note" class="input" placeholder="masalan: 3-bino, 2-qavat" maxlength="120" /></div>
+              <button class="btn btn-primary" :disabled="!add.targets.trim() || add.busy || job?.running" @click="addDevices">{{ add.busy ? "Qidirilmoqda…" : "Qidirish va qoʻshish" }}</button>
+            </div>
+            <p v-if="add.err" class="err">{{ add.err }}</p>
+            <div v-if="add.res" class="small">
+              <strong>{{ add.res.hosts }}</strong> ta manzil tekshirildi · topildi {{ add.res.found }} · yangi {{ add.res.added }} · yangilandi {{ add.res.updated }}
+              <div v-for="s in add.res.skipped.slice(0, 10)" :key="s.ip" class="muted">{{ s.ip }} — {{ s.reason }}</div>
+              <div v-if="add.res.skipped.length > 10" class="muted">… yana {{ add.res.skipped.length - 10 }} ta oʻtkazildi</div>
+              <div v-if="Array.isArray(add.res.silent) && add.res.silent.length" class="muted">Javob bermadi: {{ add.res.silent.join(", ") }}</div>
+              <div v-else-if="typeof add.res.silent === 'number'" class="muted">Javob bermadi: {{ add.res.silent }} ta manzil</div>
+            </div>
           </div>
           <div class="filters">
             <input v-model="q" class="input" placeholder="Qidirish: IP, nom, NVR…" aria-label="Qidirish" />
+            <select v-model="fSrc" class="input" aria-label="Manba">
+              <option value="">Barcha manbalar</option>
+              <option value="nvr">NVR orqali ({{ srcCount.nvr }})</option>
+              <option value="direct">Toʻgʻridan ({{ srcCount.direct }})</option>
+              <option value="discovered">Skaner/qoʻlda ({{ srcCount.discovered }})</option>
+            </select>
             <select v-model="fNvr" class="input" aria-label="NVR"><option value="">Barcha NVR</option><option v-for="n in nvrOptions" :key="n.id" :value="String(n.id)">{{ n.name }}</option><option value="none">NVR’siz</option></select>
             <select v-model="fNet" class="input" aria-label="Tarmoq"><option value="">Barcha tarmoqlar</option><option v-for="n in nets" :key="n" :value="n">{{ n }}.x</option></select>
             <select v-model="fBld" class="input" aria-label="Bino"><option value="">Barcha binolar</option><option v-for="b in buildings" :key="b" :value="b">{{ b }}-bino</option></select>
@@ -514,7 +572,10 @@ const ipChanges = computed(() => selList.value.filter((d) => newIpOf(d.ip) && ne
                   <td><input type="checkbox" class="cb" :checked="selected.has(d.ip)" :aria-label="`${d.ip} belgilash`" @change="toggle(d.ip)" /></td>
                   <td class="mono">{{ d.ip }}</td>
                   <td>{{ d.name || "—" }}</td>
-                  <td class="small">{{ where(d) }}</td>
+                  <td class="small">
+                    {{ where(d) }}
+                    <button v-if="d.discovered?.removable && !d.direct && !d.nvr.length" class="linkbtn" :aria-label="`${d.ip} roʻyxatdan olib tashlash`" @click="removeDevice(d)">olib tashlash</button>
+                  </td>
                   <td>
                     <span v-if="resultOf.get(d.ip)" class="badge" :class="STATE[resultOf.get(d.ip)!.state].cls">{{ STATE[resultOf.get(d.ip)!.state].text }}</span>
                     <span v-else-if="d.online === true" class="badge badge-ok">Onlayn</span>
@@ -621,7 +682,12 @@ const ipChanges = computed(() => selList.value.filter((d) => newIpOf(d.ip) && ne
 @media (max-width: 1200px) { .layout { grid-template-columns: 1fr; } }
 .side { position: sticky; top: 100px; }
 @media (max-width: 1200px) { .side { position: static; } }
-.filters { display: grid; grid-template-columns: 2fr repeat(4, 1fr); gap: 10px; }
+.filters { display: grid; grid-template-columns: 2fr repeat(5, 1fr); gap: 10px; }
+.addbox { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 10px; background: var(--panel-2); }
+.addbox .hint { margin: 0; }
+.addrow { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; align-items: end; }
+@media (max-width: 900px) { .addrow { grid-template-columns: 1fr; } }
+.linkbtn { display: block; margin-top: 4px; padding: 0; border: 0; background: none; color: var(--danger-ink); font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; }
 @media (max-width: 900px) { .filters { grid-template-columns: 1fr 1fr; } }
 .selbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .cb { width: 22px; height: 22px; accent-color: var(--accent); }

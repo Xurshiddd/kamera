@@ -24,6 +24,9 @@ services:
     volumes:
       - ./mediamtx.yml:/mediamtx.yml
       - ./hls:/hls # HLS segmentlari diskka -> gateway statik beradi
+      # ffmpeg o'rami: kamera parolni rad etsa (401) qayta-qayta urinib
+      # kamerani bloklab qo'ymasin (scripts/cam-run.sh).
+      - ./scripts/cam-run.sh:/cam-run.sh:ro
     restart: unless-stopped
 
   service:

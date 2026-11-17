@@ -6,15 +6,18 @@ const router = useRouter();
 
 const saving = ref(false);
 const error = ref("");
+const errorField = ref("");
 
 async function submit(payload: NewCamera) {
   error.value = "";
+  errorField.value = "";
   saving.value = true;
   try {
     await add(payload);
     router.push("/admin");
   } catch (e: any) {
     error.value = e?.data?.error || "Qo'shishda xatolik (service ulanmadi?).";
+    errorField.value = e?.data?.field || "";
   } finally {
     saving.value = false;
   }
@@ -31,7 +34,8 @@ async function submit(payload: NewCamera) {
         </p>
       </div>
     </div>
-    <CameraForm mode="add" :saving="saving" :error="error" @submit="submit" />
+    <CameraForm mode="add" :saving="saving" :error="error"
+      :error-field="errorField" @submit="submit" />
   </section>
 </template>
 

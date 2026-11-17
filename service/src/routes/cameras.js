@@ -1,6 +1,6 @@
 import { Router } from "express";
 import db from "../db.js";
-import { addPath, deletePath, probeCodec } from "../mediamtx.js";
+import { addPath, deletePath, checkCamera, authBlocked } from "../mediamtx.js";
 import { requirePerm } from "../auth.js";
 import { audit } from "../rbac.js";
 import { isOnDemand, stopLive } from "../live.js";
@@ -8,6 +8,25 @@ import { isOnDemand, stopLive } from "../live.js";
 const router = Router();
 const BASE = process.env.STREAM_BASE || "http://localhost:8888";
 const DEFAULT_RTSP = process.env.DEFAULT_RTSP_PATH || "Streaming/Channels/101";
+
+// Kameraga ulanish xatolari (forma maydoni yonida ko'rsatiladi).
+const CHECK_ERR = {
+  auth: {
+    status: 422,
+    field: "parol",
+    error: "Login yoki parol notoʻgʻri — kamera rad etdi. Kamera saqlanmadi. Diqqat: bir necha marta xato kiritilsa kamera vaqtincha bloklanadi.",
+  },
+  path: {
+    status: 422,
+    field: "rtspPath",
+    error: "Kamera javob berdi, lekin video yoʻli (RTSP yoʻli) topilmadi — brend yoki yoʻlni tekshiring. Kamera saqlanmadi.",
+  },
+};
+const DOWN_MSG = "Kameraning RTSP portiga ulanib boʻlmadi (IP/port notoʻgʻri yoki kamera oʻchiq).";
+const sendCheckErr = (res, reason) => {
+  const e = CHECK_ERR[reason];
+  return res.status(e.status).json({ error: e.error, reason, field: e.field });
+};
 
 // Nomdan URL uchun xavfsiz slug yasaymiz.
 export function makeSlug(name) {
@@ -51,6 +70,8 @@ export function toApi(r) {
     // NVR'siz kamera maydonlari
     ip: r.nvr_id ? null : r.ip,
     port: r.nvr_id ? null : r.port,
+    // Kamera parolni rad etgan (401) — oqim bloklanmaslik uchun kutyapti.
+    auth_blocked: authBlocked(r.slug),
     created_at: r.created_at,
     ...publicUrls(r.slug),
   };
@@ -143,8 +164,15 @@ router.post("/", requirePerm("cameras.manage"), async (req, res) => {
       parol,
       rtsp_path: rtspPath || DEFAULT_RTSP,
     });
+    // Avval bir marta ulanib ko'ramiz: noto'g'ri parol bilan saqlansa MediaMTX
+    // qayta-qayta urinib kamerani bloklab qo'yadi.
     // H264 bo'lsa transkod qilinmaydi (CPU tejaladi); aniqlanmasa — transkod.
-    camera.codec = await probeCodec(camera);
+    const chk = await checkCamera(camera);
+    if (!chk.ok && CHECK_ERR[chk.reason]) {
+      audit(req, "camera.check_fail", { details: { ip, reason: chk.reason } });
+      return sendCheckErr(res, chk.reason);
+    }
+    camera.codec = chk.ok ? chk.codec : null; // "down" — kamera vaqtincha o'chiq bo'lishi mumkin
     try {
       await addPath(camera); // avval MediaMTX, keyin DB
     } catch (e) {
@@ -197,16 +225,28 @@ router.put("/:id(\\d+)", requirePerm("cameras.manage"), async (req, res) => {
       parol: parol || row.parol,
       rtsp_path: rtspPath || row.rtsp_path,
     });
-    // Avval eski ffmpeg'ni to'xtatamiz — kamera ulanishi bo'shasin (ko'p
-    // kameralar bir vaqtda 1-2 ta RTSP mijozgagina ruxsat beradi), keyin
-    // kodekni qayta aniqlaymiz (IP/oqim o'zgargan bo'lishi mumkin).
-    await deletePath(row.slug);
-    await new Promise((r) => setTimeout(r, 1500));
-    camera.codec = await probeCodec(camera);
-    try {
-      await addPath(camera);
-    } catch (e) {
-      return res.status(502).json({ error: "MediaMTX'ga ulanmadi: " + e.message });
+    const connChanged = ["ip", "port", "login", "parol", "rtsp_path"].some((k) => camera[k] !== row[k]);
+    // Faqat nom/tartib/ochiqlik o'zgarsa kameraga qayta ulanmaymiz (ortiqcha
+    // login urinishlari yo'q, oqim uzilmaydi).
+    if (connChanged) {
+      // Avval eski ffmpeg'ni to'xtatamiz — kamera ulanishi bo'shasin (ko'p
+      // kameralar bir vaqtda 1-2 ta RTSP mijozgagina ruxsat beradi), keyin
+      // bir marta ulanib tekshiramiz va kodekni aniqlaymiz.
+      await deletePath(row.slug);
+      await new Promise((r) => setTimeout(r, 1500));
+      const chk = await checkCamera(camera);
+      if (!chk.ok && CHECK_ERR[chk.reason]) {
+        // Saqlamaymiz; eski sozlama bilan oqimni qaytaramiz.
+        await addPath(row).catch(() => {});
+        audit(req, "camera.check_fail", { cameraId: row.id, details: { ip: camera.ip, reason: chk.reason } });
+        return sendCheckErr(res, chk.reason);
+      }
+      camera.codec = chk.ok ? chk.codec : null;
+      try {
+        await addPath(camera);
+      } catch (e) {
+        return res.status(502).json({ error: "MediaMTX'ga ulanmadi: " + e.message });
+      }
     }
   }
 
@@ -219,6 +259,34 @@ router.put("/:id(\\d+)", requirePerm("cameras.manage"), async (req, res) => {
 
   audit(req, "camera.update", { cameraId: row.id, details: { name: camera.name } });
   res.json(toApi(db.prepare(`${SELECT} WHERE c.id = ?`).get(row.id)));
+});
+
+// Formadagi «Ulanishni tekshirish»: saqlamasdan bir marta ulanib ko'radi.
+// Tahrirlashda parol bo'sh bo'lsa saqlangan parol ishlatiladi (id orqali).
+router.post("/check", requirePerm("cameras.manage"), async (req, res) => {
+  const b = req.body || {};
+  const row = b.id ? db.prepare("SELECT * FROM cameras WHERE id = ? AND nvr_id IS NULL").get(b.id) : null;
+  const camera = {
+    ip: String(b.ip || "").trim(),
+    port: Number(b.port) || 554,
+    login: String(b.login || "").trim(),
+    parol: b.parol ? String(b.parol) : row?.parol || "",
+    rtsp_path: String(b.rtspPath || "").replace(/^\/+/, "") || DEFAULT_RTSP,
+  };
+  if (!/^[\w.-]+$/.test(camera.ip) || !camera.login || !camera.parol) {
+    return res.status(400).json({ error: "IP, login va parol kerak" });
+  }
+  const chk = await checkCamera(camera);
+  audit(req, "camera.check", { cameraId: row?.id ?? null, details: { ip: camera.ip, ok: chk.ok, reason: chk.reason } });
+  if (chk.ok) {
+    const codec = chk.codec === "h264" ? "H.264" : chk.codec === "hevc" ? "H.265" : chk.codec;
+    return res.json({ ok: true, codec: chk.codec, message: `Ulandi — login/parol toʻgʻri (${codec}${chk.width ? `, ${chk.width}×${chk.height}` : ""})` });
+  }
+  if (CHECK_ERR[chk.reason]) {
+    const e = CHECK_ERR[chk.reason];
+    return res.status(422).json({ ok: false, reason: chk.reason, field: e.field, error: e.error.replace(" Kamera saqlanmadi.", "") });
+  }
+  res.status(422).json({ ok: false, reason: "down", field: "ip", error: DOWN_MSG });
 });
 
 router.delete("/:id(\\d+)", requirePerm("cameras.manage"), async (req, res) => {

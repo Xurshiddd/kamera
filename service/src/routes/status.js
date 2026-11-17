@@ -9,6 +9,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import db from "../db.js";
 import { requirePerm } from "../auth.js";
+import { authBlocked } from "../mediamtx.js";
 
 const execFileAsync = promisify(execFile);
 const API = process.env.MEDIAMTX_API || "http://127.0.0.1:9997";
@@ -67,6 +68,7 @@ router.get("/status", requirePerm("status.view"), async (req, res) => {
         readers: p?.readers?.length || 0, // nechta tomoshabin ulangan
         bytesReceived: p?.bytesReceived || 0, // kameradan kelgan trafik
         since: p?.readyTime || null, // qachondan beri jonli
+        auth_blocked: !p?.ready && authBlocked(c.slug), // kamera parolni rad etgan
       };
     });
 

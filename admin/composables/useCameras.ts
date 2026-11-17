@@ -51,6 +51,7 @@ export interface Camera {
   stream?: "main" | "sub";
   source?: "scan" | null; // 'scan' = tarmoq skaneri orqali qo'shilgan
   hls: string;
+  auth_blocked?: boolean; // kamera parolni rad etgan — oqim kutyapti
   created_at?: string;
 }
 
