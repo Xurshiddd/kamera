@@ -6,6 +6,11 @@
 // birdan tortilib tarmoqni band qilmaydi.
 const base = useRuntimeConfig().public.serviceBase as string;
 
+// Yuqori o'ng burchakdagi kirish tugmasi: tizimga kirgan bo'lsa —
+// to'g'ridan-to'g'ri o'z "uy" sahifasiga, aks holda /login'ga.
+const { token, me, loadMe, homePath } = useAuth();
+const loginTo = computed(() => (me.value ? homePath() : "/login"));
+
 const cameras = ref<Camera[]>([]);
 const loading = ref(true);
 const error = ref("");
@@ -64,6 +69,7 @@ function tick() {
 onMounted(async () => {
   tick();
   clockTimer = setInterval(tick, 1000);
+  if (token.value) loadMe(); // fon rejimida — kameralar yuklanishini kutdirmaydi
   try {
     const data = await $fetch<Camera[]>(`${base}/api/public/cameras`);
     if (!Array.isArray(data)) throw new Error("Kutilmagan javob");
@@ -90,10 +96,15 @@ onBeforeUnmount(() => {
           <span>Toshkent to'qimachilik va yengil sanoat instituti</span>
         </div>
       </div>
-      <!-- Admin kirish havolasi ATAYIN yo'q — /login faqat URL'ni bilganlar uchun -->
       <div class="g-right">
         <span class="live"><span class="live-dot" />LIVE</span>
         <span class="clock">{{ clock }}</span>
+        <NuxtLink :to="loginTo" class="login-btn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h3" /><path d="M14 8l4 4-4 4" /><path d="M18 12H8" />
+          </svg>
+          {{ me ? "Kabinet" : "Kirish" }}
+        </NuxtLink>
       </div>
     </header>
 
@@ -251,6 +262,27 @@ onBeforeUnmount(() => {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   font-size: 13px;
+}
+.login-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #fff;
+  color: #16407f;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 6px 16px;
+  border-radius: 999px;
+  text-decoration: none;
+  transition: background 0.15s ease, transform 0.15s ease;
+}
+.login-btn:hover {
+  background: #e3edfb;
+  transform: translateY(-1px);
+}
+.login-btn svg {
+  width: 16px;
+  height: 16px;
 }
 /* --- video devor (2×2) --- */
 .g-main {
