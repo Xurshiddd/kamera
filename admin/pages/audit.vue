@@ -20,6 +20,7 @@ const ACTIONS: Record<string, string> = {
   "camera.create": "Kamera qo'shdi",
   "camera.update": "Kamerani tahrirladi",
   "camera.delete": "Kamerani o'chirdi",
+  "camera.dedupe": "Takror (bir xil IP) kameralarni o'chirdi",
   "user.create": "Foydalanuvchi qo'shdi",
   "user.update": "Foydalanuvchini tahrirladi",
   "user.delete": "Foydalanuvchini o'chirdi",

@@ -16,7 +16,29 @@ export function useCameras() {
 
   const remove = (id: number) => call(`/api/cameras/${id}`, { method: "DELETE" });
 
-  return { list, get, add, update, remove };
+  // Bir xil IP'li kameralar: qaysi biri qoladi / qaysilari o'chadi.
+  const duplicates = (): Promise<{ groups: DupGroup[]; total: number }> =>
+    call("/api/cameras/duplicates");
+
+  const cleanDuplicates = (): Promise<{ ok: boolean; removed: number }> =>
+    call("/api/cameras/duplicates/clean", { method: "POST" });
+
+  return { list, get, add, update, remove, duplicates, cleanDuplicates };
+}
+
+export interface DupItem {
+  id: number;
+  name: string;
+  nvr_name: string | null;
+  channel: number | null;
+  source: "nvr" | "scan" | "manual";
+  created_at?: string;
+}
+
+export interface DupGroup {
+  ip: string;
+  keep: DupItem;
+  remove: DupItem[];
 }
 
 export interface NewCamera {

@@ -291,6 +291,88 @@ router.post("/check", requirePerm("cameras.manage"), async (req, res) => {
   res.status(422).json({ ok: false, reason: "down", field: "ip", error: DOWN_MSG });
 });
 
+// --- Bir xil IP'li (takror) kameralar ---------------------------------------
+// Haqiqiy IP: NVR kamerasida cam_ip (NVR kanalidan), aks holda ip.
+// Qaysi biri qoladi:
+//   - guruhda NVR kamerasi bo'lsa — NVR kameralaridan eng yangisi (qolganlari,
+//     shu jumladan skaner/qo'lda qo'shilganlar o'chadi);
+//   - NVR kamerasi bo'lmasa (masalan ikkalasi skaner orqali) — eng yangisi.
+// "Eng yangi" = eng katta id (AUTOINCREMENT, qo'shilish tartibi).
+function findDuplicates() {
+  const rows = db
+    .prepare(
+      `${SELECT} WHERE TRIM(COALESCE(CASE WHEN c.nvr_id IS NULL THEN c.ip ELSE c.cam_ip END, '')) != ''
+       ORDER BY c.id`
+    )
+    .all();
+  const byIp = new Map();
+  for (const r of rows) {
+    const ip = String(r.nvr_id ? r.cam_ip : r.ip).trim();
+    if (!byIp.has(ip)) byIp.set(ip, []);
+    byIp.get(ip).push(r);
+  }
+  const groups = [];
+  for (const [ip, list] of byIp) {
+    if (list.length < 2) continue;
+    const nvrOnes = list.filter((r) => r.nvr_id);
+    const pool = nvrOnes.length ? nvrOnes : list;
+    const keep = pool.reduce((a, b) => (b.id > a.id ? b : a));
+    const short = (r) => ({
+      id: r.id,
+      name: r.name,
+      nvr_name: r.nvr_name ?? null,
+      channel: r.channel ?? null,
+      source: r.nvr_id ? "nvr" : r.source === "scan" ? "scan" : "manual",
+      created_at: r.created_at,
+    });
+    groups.push({
+      ip,
+      keep: short(keep),
+      remove: list.filter((r) => r.id !== keep.id).map(short),
+    });
+  }
+  return groups;
+}
+
+router.get("/duplicates", requirePerm("cameras.manage"), (req, res) => {
+  const groups = findDuplicates();
+  res.json({ groups, total: groups.reduce((n, g) => n + g.remove.length, 0) });
+});
+
+// Ortiqchalarni o'chirish. Ro'yxat serverda qayta hisoblanadi (klientdan id
+// olinmaydi). O'chiriladigan kameraning guruh a'zoligi, topologiya ulanishi va
+// skaner yozuvi qoladigan kameraga ko'chiriladi — hech narsa yo'qolmasin.
+router.post("/duplicates/clean", requirePerm("cameras.manage"), async (req, res) => {
+  const groups = findDuplicates();
+  const moveGroups = db.prepare(
+    "INSERT OR IGNORE INTO camera_group_items (group_id, camera_id) SELECT group_id, ? FROM camera_group_items WHERE camera_id = ?"
+  );
+  const moveLink = db.prepare(
+    `INSERT OR IGNORE INTO camera_links (camera_id, device_id, port)
+     SELECT ?, device_id, port FROM camera_links WHERE camera_id = ?`
+  );
+  const moveDisc = db.prepare("UPDATE discovered_cameras SET camera_id = ? WHERE camera_id = ?");
+  const del = db.prepare("DELETE FROM cameras WHERE id = ?");
+  const removed = [];
+  for (const g of groups) {
+    for (const r of g.remove) {
+      const row = db.prepare("SELECT id, slug, nvr_id FROM cameras WHERE id = ?").get(r.id);
+      if (!row) continue;
+      if (isOnDemand(row)) await stopLive(row.id, row.slug);
+      else await deletePath(row.slug).catch(() => {});
+      db.transaction(() => {
+        moveGroups.run(g.keep.id, row.id);
+        moveLink.run(g.keep.id, row.id);
+        moveDisc.run(g.keep.id, row.id);
+        del.run(row.id);
+      })();
+      removed.push({ id: row.id, name: r.name, ip: g.ip, kept: g.keep.id });
+    }
+  }
+  audit(req, "camera.dedupe", { details: { removed: removed.length, items: removed } });
+  res.json({ ok: true, removed: removed.length, items: removed });
+});
+
 router.delete("/:id(\\d+)", requirePerm("cameras.manage"), async (req, res) => {
   const row = db.prepare("SELECT id, slug, nvr_id FROM cameras WHERE id = ?").get(req.params.id);
   if (!row) return res.status(404).json({ error: "Topilmadi" });

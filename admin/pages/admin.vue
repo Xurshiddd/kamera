@@ -1,7 +1,7 @@
 <script setup lang="ts">
 definePageMeta({ permission: "cameras.manage" });
 
-const { list, remove } = useCameras();
+const { list, remove, duplicates, cleanDuplicates } = useCameras();
 const { can } = useAuth();
 const route = useRoute();
 const router = useRouter();
@@ -98,6 +98,40 @@ async function onDelete(c: Camera) {
   await reload();
 }
 
+// Bir xil IP'li kameralar: NVR'dagisi qoladi; ikkalasi NVR'da yoki ikkalasi
+// skaner orqali bo'lsa — yangi qo'shilgani qoladi (qoidalar serverda).
+const dup = ref<{ groups: DupGroup[]; total: number } | null>(null);
+const dupBusy = ref(false);
+const dupMsg = ref("");
+async function openDup() {
+  dupBusy.value = true;
+  dupMsg.value = "";
+  try {
+    dup.value = await duplicates();
+  } catch (e: any) {
+    dupMsg.value = e?.data?.error || "Takrorlarni tekshirib boʻlmadi";
+  } finally {
+    dupBusy.value = false;
+  }
+}
+async function runDup() {
+  dupBusy.value = true;
+  try {
+    const r = await cleanDuplicates();
+    dup.value = null;
+    dupMsg.value = `${r.removed} ta ortiqcha kamera oʻchirildi`;
+    await reload();
+  } catch (e: any) {
+    dupMsg.value = e?.data?.error || "Oʻchirishda xato";
+  } finally {
+    dupBusy.value = false;
+  }
+}
+function dupLabel(d: DupItem) {
+  if (d.source === "nvr") return `${d.nvr_name || "NVR"} · kanal ${d.channel}`;
+  return d.source === "scan" ? "Skaner orqali" : "Qoʻlda qoʻshilgan";
+}
+
 // STREAM_BASE nisbiy (/hls) bo'lishi mumkin — nusxa/ko'rsatish uchun to'liq
 // manzilga aylantiramiz (qaysi host orqali kirilgan bo'lsa, o'sha).
 function absUrl(u: string) {
@@ -147,9 +181,41 @@ onMounted(reload);
             <option value="scan">— shundan skaner orqali ({{ sources.scan }})</option>
           </optgroup>
         </select>
+        <button class="btn" :disabled="dupBusy" title="Bir xil IP'li kameralardan ortiqchasini oʻchirish" @click="openDup">
+          {{ dupBusy && !dup ? "Tekshirilmoqda…" : "Takrorlarni tozalash" }}
+        </button>
         <NuxtLink to="/nvrs" class="btn">NVR'dan import</NuxtLink>
         <NuxtLink v-if="can('discovery.manage')" to="/discovery" class="btn">Tarmoqdan topish</NuxtLink>
         <NuxtLink to="/add" class="btn btn-primary">+ Kamera qo'shish</NuxtLink>
+      </div>
+    </div>
+
+    <p v-if="dupMsg" class="muted dup-msg">{{ dupMsg }}</p>
+
+    <div v-if="dup" class="overlay" role="alertdialog" aria-modal="true" aria-labelledby="dup-t" @click.self="dup = null">
+      <div class="panel dialog">
+        <h2 id="dup-t">Bir xil IP'li kameralar</h2>
+        <p v-if="!dup.total" class="muted">Takror kamera topilmadi — hamma IP'lar yagona.</p>
+        <template v-else>
+          <p class="muted">
+            {{ dup.groups.length }} ta IP'da takror bor, <b>{{ dup.total }}</b> ta ortiqcha kamera oʻchiriladi.
+            NVR'dagi kamera qoladi; ikkalasi NVR'da yoki ikkalasi skaner orqali boʻlsa — yangi qoʻshilgani qoladi.
+            Guruh va topologiya bogʻlanishlari qoladigan kameraga oʻtkaziladi.
+          </p>
+          <div class="dup-list">
+            <div v-for="g in dup.groups" :key="g.ip" class="dup-g">
+              <div class="mono dup-ip">{{ g.ip }}</div>
+              <div class="dup-row keep">✓ Qoladi: <b>{{ g.keep.name }}</b> <span class="muted">— {{ dupLabel(g.keep) }}, {{ fmtUtc(g.keep.created_at, false) }}</span></div>
+              <div v-for="r in g.remove" :key="r.id" class="dup-row del">✕ Oʻchadi: <b>{{ r.name }}</b> <span class="muted">— {{ dupLabel(r) }}, {{ fmtUtc(r.created_at, false) }}</span></div>
+            </div>
+          </div>
+        </template>
+        <div class="dup-actions">
+          <button class="btn" :disabled="dupBusy" @click="dup = null">Bekor qilish</button>
+          <button v-if="dup.total" class="btn btn-danger" :disabled="dupBusy" @click="runDup">
+            {{ dupBusy ? "Oʻchirilmoqda…" : `${dup.total} ta ortiqchani oʻchirish` }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -227,6 +293,18 @@ onMounted(reload);
 </template>
 
 <style scoped>
+.overlay { position: fixed; inset: 0; background: rgba(17, 24, 39, 0.5); display: grid; place-items: center; z-index: 50; padding: 16px; }
+.dialog { max-width: 680px; width: 100%; margin: 0; max-height: 90vh; display: flex; flex-direction: column; }
+.dialog h2 { margin: 0 0 8px; }
+.dup-list { overflow: auto; border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; margin: 8px 0 12px; }
+.dup-g { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.dup-g:last-child { border-bottom: 0; }
+.dup-ip { font-weight: 700; margin-bottom: 4px; }
+.dup-row { font-size: 16px; padding: 2px 0; }
+.dup-row.keep { color: var(--ok); }
+.dup-row.del { color: var(--danger, #b91c1c); }
+.dup-actions { display: flex; gap: 8px; justify-content: flex-end; }
+.dup-msg { margin-top: 0; }
 .head-tools {
   display: flex;
   gap: 8px;
