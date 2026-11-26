@@ -17,7 +17,7 @@ import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import db from "./db.js";
-import { downloadFile, playbackUrl, searchFiles } from "./hikvision.js";
+import { streamInfo, downloadFile, playbackUrl, searchFiles } from "./hikvision.js";
 import { probeCodec } from "./mediamtx.js";
 
 const PB_DIR = process.env.HLS_PB_DIR || "/hls-pb";
@@ -104,13 +104,18 @@ export async function startSession({ user, camera, start }) {
       : ["-vf", "scale=-2:720", "-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency",
          "-g", "25", "-keyint_min", "25", "-sc_threshold", "0",
          "-b:v", "1200k", "-maxrate", "1500k", "-bufsize", "3M"];
+  // Ovozi o'chiq kanalda audio trek bo'sh — uni olsak ffmpeg qotib qoladi
+  // (hikvision.js streamInfo izohiga qarang). Noma'lum bo'lsa ham xavfsiz tomoni: ovozsiz.
+  const audio = (await streamInfo(nvr, camera.channel))?.audio
+    ? ["-map", "0:a:0?", "-c:a", "aac", "-b:a", "64k", "-ar", "48000"]
+    : ["-an"];
   const args = [
     "-hide_banner", "-loglevel", "error",
     "-rtsp_transport", "tcp", "-fflags", "+genpts",
     "-i", playbackUrl(nvr, camera.channel, start),
-    "-map", "0:v:0", "-map", "0:a:0?",
+    "-map", "0:v:0",
     ...video,
-    "-c:a", "aac", "-b:a", "64k", "-ar", "48000",
+    ...audio,
     "-f", "hls", "-hls_time", "2", "-hls_list_size", "0",
     "-hls_playlist_type", "event", // pleyer yuklanganini orqaga surib ko'ra oladi
     "-hls_segment_filename", path.join(dir, "s%05d.ts"),

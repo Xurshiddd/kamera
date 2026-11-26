@@ -7,7 +7,7 @@ import { promisify } from "node:util";
 import fs from "node:fs";
 import path from "node:path";
 import db from "./db.js";
-import { liveUrl } from "./hikvision.js";
+import { liveUrl, streamInfo } from "./hikvision.js";
 import { probe } from "./scanner.js";
 
 const execFileAsync = promisify(execFile);
@@ -22,6 +22,13 @@ const HEIGHT = Number(process.env.VIDEO_HEIGHT || 720);
 // Qaytaradi: "h264" | "hevc" | null (kamera javob bermasa/aniqlanmasa).
 // null bo'lsa xavfsiz tanlov — transkod qilamiz.
 export async function probeCodec(camera) {
+  // NVR kamerasi: kodek NVR sozlamasidan (tez va ishonchli — hikvision.js
+  // streamInfo izohiga qarang). Bo'lmasa — ffprobe.
+  if (camera.nvr_id) {
+    const nvr = db.prepare("SELECT * FROM nvrs WHERE id = ?").get(camera.nvr_id);
+    const codec = nvr && (await streamInfo(nvr, camera.channel, camera.stream || "main"))?.codec;
+    if (codec) return codec;
+  }
   try {
     const { stdout } = await execFileAsync(
       "ffprobe",

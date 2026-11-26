@@ -329,6 +329,55 @@ export async function getStream(nvr, channel) {
   };
 }
 
+// Kanal oqimining NVR'dagi sozlamasi: { codec: "h264"|"hevc"|null, audio: bool }.
+//
+// Nega kerak:
+//  - Kodek: ba'zi kameralar (masalan 3200x1800 H.265) NVR orqali jonli oqimda
+//    uzoq vaqt kalit kadr/VPS-SPS-PPS yubormaydi — ffprobe kodekni 15+ s
+//    aniqlay olmaydi. NVR sozlamasida esa kodek darhol ma'lum.
+//  - Ovoz: ovozi o'chiq kanal yozuvida ham RTSP SDP audio trekni e'lon qiladi,
+//    lekin paket yubormaydi — ffmpeg (7.x) audio enkoderni birinchi kadrsiz
+//    ochmaydi va HLS hech qachon boshlanmaydi.
+// Kanal-kanal so'rov NVR orqali kameraga boradi (ba'zan 10+ s), shuning uchun
+// hamma kanal bitta so'rovda (~0.7 s) olinib, NVR bo'yicha 10 daqiqa keshlanadi.
+// Aniqlab bo'lmasa null.
+const STREAM_INFO_TTL_MS = 10 * 60 * 1000;
+const streamInfoCache = new Map(); // "ip:port" -> { at, map: Promise<Map<streamId, info>> }
+const CODEC_NAMES = { "H.264": "h264", "H.265": "hevc" };
+
+export async function streamInfo(nvr, channel, stream = "main") {
+  const key = `${nvr.ip}:${nvr.http_port || 80}`;
+  let c = streamInfoCache.get(key);
+  if (!c || Date.now() - c.at > STREAM_INFO_TTL_MS) {
+    c = {
+      at: Date.now(),
+      map: isapi(nvr, "/ISAPI/ContentMgmt/StreamingProxy/channels", { timeout: 10000 }).then((x) => {
+        const m = new Map();
+        for (const b of blocks(x, "StreamingChannel")) {
+          const a = b.match(/<Audio>[\s\S]*?<\/Audio>/);
+          m.set(Number(tag(b, "id")), {
+            codec: CODEC_NAMES[tag(b, "videoCodecType")] || null,
+            audio: a ? tag(a[0], "enabled") === "true" : false,
+          });
+        }
+        return m;
+      }),
+    };
+    streamInfoCache.set(key, c);
+    c.map.catch(() => streamInfoCache.delete(key)); // xato keshlanmasin
+  }
+  try {
+    return (await c.map).get(Number(channel) * 100 + (stream === "sub" ? 2 : 1)) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// Kanal sozlamasi o'zgardi (kodek va h.k.) — keyingi so'rov yangisini olsin.
+export function forgetStreamInfo(nvr) {
+  streamInfoCache.delete(`${nvr.ip}:${nvr.http_port || 80}`);
+}
+
 // O'zgartirish: joriy XML olinadi, faqat berilgan maydonlar almashtiriladi
 // (NVR qolgan maydonlarni o'zgarmagan holda qabul qiladi).
 // changes: { codec, width, height, rc, bitrate, fps, smart }

@@ -2,7 +2,7 @@ import { Router } from "express";
 import db from "../db.js";
 import { requirePerm } from "../auth.js";
 import { audit } from "../rbac.js";
-import { deviceInfo, listChannels, listStreams, getStream, setStream, setChannelName, snapshot } from "../hikvision.js";
+import { deviceInfo, listChannels, listStreams, getStream, setStream, setChannelName, snapshot, forgetStreamInfo } from "../hikvision.js";
 import { stopLive } from "../live.js";
 import { makeSlug } from "./cameras.js";
 
@@ -134,15 +134,30 @@ function ipOwners() {
   return m;
 }
 
-// Kanal ro'yxatidan shu NVR kameralarining IP'sini yangilab qo'yamiz
-// (eski importlarda IP saqlanmagan edi).
-function syncCamIps(nvrId, channels) {
-  const upd = db.prepare(
-    "UPDATE cameras SET cam_ip = ? WHERE nvr_id = ? AND channel = ? AND IFNULL(cam_ip, '') != ?"
+// Kanal ro'yxatidan shu NVR kameralarini NVR bilan moslab qo'yamiz: nom va
+// IP. NVR — asosiy manba: kanalga boshqa kamera ulangan yoki NVR'da nom
+// o'zgargan bo'lishi mumkin. Nom/IP o'zgarsa kanalda boshqa kamera bo'lishi
+// ehtimoli bor — saqlangan kodek tozalanadi (keyingi ochilishda qayta
+// aniqlanadi) va ochiq jonli oqim yangi sozlama bilan qayta ochiladi.
+async function syncChannels(nvrId, channels) {
+  const cams = new Map(
+    db.prepare("SELECT id, slug, channel, name, cam_ip FROM cameras WHERE nvr_id = ?").all(nvrId).map((c) => [c.channel, c])
   );
+  const upd = db.prepare("UPDATE cameras SET name = ?, cam_ip = ?, codec = NULL WHERE id = ?");
+  const changed = [];
   db.transaction(() => {
-    for (const ch of channels) if (ch.ip) upd.run(ch.ip, nvrId, ch.channel, ch.ip);
+    for (const ch of channels) {
+      const c = cams.get(ch.channel);
+      if (!c) continue;
+      const name = ch.name || c.name;
+      const ip = ch.ip || c.cam_ip;
+      if (name === c.name && ip === c.cam_ip) continue;
+      upd.run(name, ip, c.id);
+      changed.push(c);
+    }
   })();
+  for (const c of changed) await stopLive(c.id, c.slug).catch(() => {});
+  return changed.length;
 }
 
 // Boshqa joydagi (boshqa NVR yoki boshqa kanal / to'g'ridan) shu IP'li kamera.
@@ -160,7 +175,7 @@ router.get("/:id(\\d+)/channels", manage, async (req, res) => {
   } catch (e) {
     return res.status(502).json({ error: "NVR'dan kanallarni olib bo'lmadi: " + e.message });
   }
-  syncCamIps(row.id, channels);
+  await syncChannels(row.id, channels);
   const imported = new Map(
     db
       .prepare("SELECT id, channel, name FROM cameras WHERE nvr_id = ?")
@@ -207,7 +222,7 @@ router.post("/:id(\\d+)/import", manage, async (req, res) => {
     return res.status(502).json({ error: "NVR'dan kanallarni olib bo'lmadi: " + e.message });
   }
 
-  syncCamIps(row.id, channels);
+  await syncChannels(row.id, channels);
   const owners = ipOwners();
   const exists = db.prepare("SELECT 1 FROM cameras WHERE nvr_id = ? AND channel = ?");
   const slugTaken = db.prepare("SELECT 1 FROM cameras WHERE slug = ?");
@@ -277,6 +292,7 @@ router.get("/:id(\\d+)/streams", manage, async (req, res) => {
   } catch (e) {
     return res.status(502).json({ error: "NVR'dan maʼlumot olib boʻlmadi: " + e.message });
   }
+  await syncChannels(row.id, channels);
   const cams = new Map(
     db.prepare("SELECT id, channel, name FROM cameras WHERE nvr_id = ?").all(row.id).map((c) => [c.channel, c])
   );
@@ -355,6 +371,7 @@ router.put("/:id(\\d+)/channels/:ch(\\d+)/stream", manage, async (req, res) => {
   } catch (e) {
     return res.status(502).json({ error: busyMsg(e) });
   }
+  forgetStreamInfo(row);
   // Kodek o'zgargan bo'lishi mumkin — jonli oqim qayta aniqlab, qayta ochilsin.
   for (const c of db.prepare("SELECT id, slug FROM cameras WHERE nvr_id = ? AND channel = ?").all(row.id, ch)) {
     db.prepare("UPDATE cameras SET codec = NULL WHERE id = ?").run(c.id);
